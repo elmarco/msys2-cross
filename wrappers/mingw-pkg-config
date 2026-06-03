@@ -3,4 +3,4 @@
 export PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
 export PKG_CONFIG_SYSROOT_DIR="/ucrt64"
 export PKG_CONFIG_LIBDIR="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
-exec pkg-config "$@"
+exec /usr/bin/pkg-config "$@"

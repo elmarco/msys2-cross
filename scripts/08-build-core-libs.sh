@@ -22,8 +22,8 @@ fi
 # Core packages to build, in dependency order.
 # These are the minimal set needed to bootstrap further builds.
 CORE_PACKAGES=(
-    mingw-w64-zlib
     mingw-w64-bzip2
+    mingw-w64-zlib
     mingw-w64-xz
     mingw-w64-zstd
     mingw-w64-libiconv
@@ -55,26 +55,31 @@ build_mingw_package() {
 
     cd "${MINGW_PACKAGES_DIR}/${pkg}"
 
+    local _pkgdir="${MINGW_PACKAGES_DIR}/${pkg}"
+
     # Build with our cross-compilation makepkg-mingw
-    PKGDEST="${REPO_DIR}" \
-    "${MAKEPKG_MINGW}" \
-        --skipchecksums \
-        --skippgpcheck \
-        --nocheck \
-        --force \
-        --log \
-        2>&1 || {
-            echo "WARNING: Failed to build ${pkg}, continuing..."
-            return 0
-        }
+    if [[ "$(id -u)" == "0" ]]; then
+        chown -R builduser: "${_pkgdir}" "${REPO_DIR}"
+        su builduser -s /bin/bash -c "cd '${_pkgdir}' && '${MAKEPKG_MINGW}' --skipchecksums --skippgpcheck --nocheck --force" \
+            2>&1 || {
+                echo "WARNING: Failed to build ${pkg}, continuing..."
+                return 0
+            }
+    else
+        "${MAKEPKG_MINGW}" --skipchecksums --skippgpcheck --nocheck --force \
+            2>&1 || {
+                echo "WARNING: Failed to build ${pkg}, continuing..."
+                return 0
+            }
+    fi
 
-    # Update repo database with new packages
-    repo-add "${REPO_DIR}/local.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.zst 2>/dev/null || true
+    # Move built packages to repo and install
+    mv "${_pkgdir}"/*.pkg.tar.* "${REPO_DIR}/" 2>/dev/null || true
+    repo-add "${REPO_DIR}/msys2-cross.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.* 2>/dev/null || true
 
-    # Install the built packages
-    for pkgfile in "${REPO_DIR}"/mingw-w64-ucrt-x86_64-*"${pkg#mingw-w64-}"*.pkg.tar.zst; do
+    for pkgfile in "${REPO_DIR}"/mingw-w64-ucrt-x86_64-*"${pkg#mingw-w64-}"*.pkg.tar.*; do
         if [[ -f "${pkgfile}" ]]; then
-            pacman --config "${PACMAN_CONF}" -U --noconfirm "${pkgfile}" 2>/dev/null || true
+            pacman --config "${PACMAN_CONF}" -U --noconfirm --overwrite='*' "${pkgfile}" 2>/dev/null || true
         fi
     done
 }

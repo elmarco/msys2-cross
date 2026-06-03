@@ -14,6 +14,7 @@ provides=(
     'mingw-w64-ucrt-x86_64-gcc'
     'mingw-w64-ucrt-x86_64-gcc-libs'
     'mingw-w64-ucrt-x86_64-cc'
+    'mingw-w64-ucrt-x86_64-cc-libs'
 )
 conflicts=(
     'mingw-w64-ucrt-x86_64-gcc'

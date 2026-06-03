@@ -1,7 +1,17 @@
 #!/bin/bash
 # CMake wrapper for UCRT64 cross-compilation.
 # Replaces MSYS2's mingw-w64-ucrt-x86_64-cmake wrapper.
-exec cmake \
+#
+# Detects cmake subcommands (--build, --install) that don't need
+# cross-compilation flags and passes them through directly.
+
+case "${1:-}" in
+    --build|--install|--open|--preset)
+        exec /usr/bin/cmake "$@"
+        ;;
+esac
+
+exec /usr/bin/cmake \
     -DCMAKE_SYSTEM_NAME=Windows \
     -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
     -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \

@@ -1,0 +1,11 @@
+pkgname=mingw-w64-ucrt-x86_64-autotools
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy autotools package — native Fedora autotools satisfy this dependency"
+arch=('any')
+url="https://www.gnu.org/software/automake/"
+license=('GPL')
+
+package() {
+    mkdir -p "${pkgdir}/opt/msys2-bootstrap"
+}

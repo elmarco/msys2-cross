@@ -16,7 +16,7 @@ dnf install -y \
     zlib-devel \
     diffutils findutils file which \
     tar xz bzip2 zstd \
-    pacman \
+    pacman fakeroot \
     perl
 
 dnf clean all

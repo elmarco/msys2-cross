@@ -18,7 +18,7 @@ Containerfile     Multi-stage: toolchain-builder → msys2-cross
 - **Target**: UCRT64 only (x86_64-w64-mingw32, UCRT C runtime)
 - **Sysroot at /ucrt64**: Matches MSYS2's `MINGW_PREFIX` so PKGBUILDs work unmodified
 - **Cross-compiler in /usr/bin/**: Standard `x86_64-w64-mingw32-gcc` naming
-- **Symlink /usr/x86_64-w64-mingw32 → /ucrt64**: GCC sysroot discovery
+- **Symlinks /usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}**: GCC sysroot discovery (can't replace the dir since binutils creates `/usr/x86_64-w64-mingw32/bin/`)
 - **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf
 - **--nodeps in makepkg-mingw**: Skips MSYS-layer dependency checks (autoconf, python, etc.) since those are native Fedora packages
 - **Wine is optional**: Only needed for ~5-10% of packages that run .exe at build time
@@ -49,9 +49,12 @@ podman run msys2-cross bash /opt/msys2-bootstrap/tests/test-meson-project.sh
 
 ## Known issues to watch for
 
+- **`--build` flag in PKGBUILDs**: Many MSYS2 PKGBUILDs pass `--build=${MINGW_CHOST}` to configure, which is correct on MSYS2 (where the build machine IS mingw32) but wrong on Linux cross-compilation. These PKGBUILDs need `--build=x86_64-pc-linux-gnu` or the `--build` flag removed. This is the most common reason a PKGBUILD fails to cross-build.
+- **CC must NOT be exported globally**: `config/mingw-env.sh` intentionally does NOT export CC/CXX. Autotools finds the cross-compiler via `--host=${MINGW_CHOST}`. Setting CC globally breaks `config.guess` (it uses `$CC -dumpmachine` and misidentifies the build machine).
 - **PKG_CONFIG_SYSROOT_DIR**: Currently set to `/ucrt64` in mingw-pkg-config. If `.pc` files already contain full `/ucrt64/...` paths, this will double-prefix to `/ucrt64/ucrt64/...`. Set it to empty (`""`) if that happens.
 - **Strip tool**: `makepkg_mingw.conf` sets `STRIP=/usr/bin/x86_64-w64-mingw32-strip`. If PE binaries come out corrupted, verify this is being picked up by makepkg.
 - **MSYS-layer makedepends**: `makepkg-mingw` uses `--nodeps` to skip MSYS deps. If a package needs a tool not in Fedora's base install, add it to `scripts/00-install-host-deps.sh`.
+- **Fedora uses lib64**: GCC installs to `/usr/lib64/gcc/` not `/usr/lib/gcc/`. The Containerfile accounts for this.
 
 ## Adding new toolchain versions
 

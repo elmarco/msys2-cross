@@ -1,7 +1,7 @@
 #!/bin/bash
 # Meson wrapper for UCRT64 cross-compilation.
 # Replaces MSYS2's mingw-w64-ucrt-x86_64-meson wrapper.
-exec meson setup \
+exec /usr/bin/meson setup \
     --cross-file /opt/msys2-bootstrap/config/cross-file.meson \
     --prefix /ucrt64 \
     "$@"

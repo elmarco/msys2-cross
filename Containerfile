@@ -36,16 +36,24 @@ RUN bash /opt/msys2-bootstrap/scripts/00-install-host-deps.sh
 # Copy cross-toolchain from builder stage
 COPY --from=toolchain-builder /ucrt64 /ucrt64
 COPY --from=toolchain-builder /usr/bin/x86_64-w64-mingw32-* /usr/bin/
-COPY --from=toolchain-builder /usr/lib/gcc/x86_64-w64-mingw32 /usr/lib/gcc/x86_64-w64-mingw32
+COPY --from=toolchain-builder /usr/x86_64-w64-mingw32 /usr/x86_64-w64-mingw32
+COPY --from=toolchain-builder /usr/lib64/gcc/x86_64-w64-mingw32 /usr/lib64/gcc/x86_64-w64-mingw32
 COPY --from=toolchain-builder /usr/libexec/gcc/x86_64-w64-mingw32 /usr/libexec/gcc/x86_64-w64-mingw32
-COPY --from=toolchain-builder /usr/lib/bfd-plugins /usr/lib/bfd-plugins
 
-# Recreate the sysroot symlink
-RUN ln -sfn /ucrt64 /usr/x86_64-w64-mingw32
+# Recreate sysroot symlinks (include/lib point into /ucrt64)
+# Also add build tool wrappers where PKGBUILDs expect them
+RUN mkdir -p /usr/x86_64-w64-mingw32 /ucrt64/bin \
+    && ln -sfn /ucrt64/include /usr/x86_64-w64-mingw32/include \
+    && ln -sfn /ucrt64/lib /usr/x86_64-w64-mingw32/lib \
+    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-cmake /ucrt64/bin/cmake \
+    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-meson /ucrt64/bin/meson \
+    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-pkg-config /ucrt64/bin/pkg-config \
+    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-pkg-config /ucrt64/bin/pkgconf
 
 # Install build infrastructure
 COPY config/ /opt/msys2-bootstrap/config/
 COPY wrappers/ /opt/msys2-bootstrap/wrappers/
+COPY patches/ /opt/msys2-bootstrap/patches/
 COPY packages/ /opt/msys2-bootstrap/packages/
 RUN chmod +x /opt/msys2-bootstrap/wrappers/* \
     && chmod +x /opt/msys2-bootstrap/config/makepkg-mingw
