@@ -1,0 +1,14 @@
+pkgname=mingw-w64-ucrt-x86_64-meson
+pkgver=1.0
+pkgrel=1
+pkgdesc="Meson wrapper for UCRT64 cross-compilation on Linux"
+arch=('any')
+url="https://mesonbuild.com/"
+license=('Apache-2.0')
+
+package() {
+    install -Dm755 /opt/msys2-bootstrap/wrappers/mingw-meson \
+        "${pkgdir}/opt/msys2-bootstrap/wrappers/mingw-meson"
+    install -Dm644 /opt/msys2-bootstrap/config/cross-file.meson \
+        "${pkgdir}/opt/msys2-bootstrap/config/cross-file.meson"
+}

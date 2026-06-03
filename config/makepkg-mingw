@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# makepkg-mingw — Linux-adapted version of MSYS2's makepkg-mingw.
+# Drives makepkg for cross-compilation of MINGW packages on Linux.
+#
+# On MSYS2, this script spawns a login shell per architecture to get
+# MSYSTEM-specific env vars. On Linux we export them directly since
+# we only target UCRT64.
+
+set -euo pipefail
+
+BOOTSTRAP_DIR=/opt/msys2-bootstrap
+
+msg() { echo -e "\033[1;32m==>\033[0m \033[1m$1\033[0m"; }
+msg2() { echo -e "  \033[1;34m->\033[0m \033[1m$1\033[0m"; }
+error() { echo -e "\033[1;31m==> ERROR:\033[0m \033[1m$1\033[0m" >&2; }
+
+# Source the cross-compilation environment
+source "${BOOTSTRAP_DIR}/config/mingw-env.sh"
+
+msg "Building for UCRT64 (${MINGW_CHOST})"
+
+# Determine makepkg config
+MAKEPKG_CONF="${BOOTSTRAP_DIR}/config/makepkg_mingw.conf"
+
+if [[ ! -f "${MAKEPKG_CONF}" ]]; then
+    error "makepkg config not found: ${MAKEPKG_CONF}"
+    exit 1
+fi
+
+# Pass through to makepkg with our config.
+# --nodeps: skip MSYS-layer dependency checks (autoconf, python, etc.)
+#           which don't exist in our pacman DB. MINGW-layer deps are
+#           resolved normally from the local repo.
+exec makepkg \
+    --config "${MAKEPKG_CONF}" \
+    --nodeps \
+    "$@"

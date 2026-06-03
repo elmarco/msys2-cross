@@ -1,0 +1,16 @@
+pkgname=mingw-w64-ucrt-x86_64-cross-headers
+pkgver=14.0.0
+pkgrel=1
+pkgdesc="MinGW-w64 Windows API headers for UCRT64 (bootstrap)"
+arch=('any')
+url="https://www.mingw-w64.org/"
+license=('custom')
+provides=(
+    'mingw-w64-ucrt-x86_64-headers-git'
+)
+conflicts=('mingw-w64-ucrt-x86_64-headers-git')
+
+package() {
+    mkdir -p "${pkgdir}/ucrt64"
+    cp -a /ucrt64/include "${pkgdir}/ucrt64/"
+}

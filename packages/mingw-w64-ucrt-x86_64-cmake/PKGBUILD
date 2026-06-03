@@ -1,0 +1,14 @@
+pkgname=mingw-w64-ucrt-x86_64-cmake
+pkgver=1.0
+pkgrel=1
+pkgdesc="CMake wrapper for UCRT64 cross-compilation on Linux"
+arch=('any')
+url="https://cmake.org/"
+license=('MIT')
+
+package() {
+    install -Dm755 /opt/msys2-bootstrap/wrappers/mingw-cmake \
+        "${pkgdir}/opt/msys2-bootstrap/wrappers/mingw-cmake"
+    install -Dm644 /opt/msys2-bootstrap/config/toolchain.cmake \
+        "${pkgdir}/opt/msys2-bootstrap/config/toolchain.cmake"
+}

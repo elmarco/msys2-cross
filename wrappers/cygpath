@@ -1,0 +1,28 @@
+#!/bin/bash
+# No-op cygpath shim for Linux.
+# On MSYS2, cygpath converts between Windows and POSIX paths.
+# On Linux, paths are already POSIX, so return input unchanged.
+
+# Handle common cygpath flags by ignoring them
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -u|-w|-m|-M|-d|-D|-H|-P|-S|-W|-F)
+            shift ;;
+        -p|-a)
+            shift ;;
+        --unix|--windows|--mixed|--path|--absolute)
+            shift ;;
+        --)
+            shift; break ;;
+        -*)
+            shift ;;
+        *)
+            break ;;
+    esac
+done
+
+if [[ $# -gt 0 ]]; then
+    echo "$1"
+else
+    cat
+fi

@@ -1,0 +1,17 @@
+#!/bin/bash
+# CMake wrapper for UCRT64 cross-compilation.
+# Replaces MSYS2's mingw-w64-ucrt-x86_64-cmake wrapper.
+exec cmake \
+    -DCMAKE_SYSTEM_NAME=Windows \
+    -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+    -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+    -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+    -DCMAKE_AR=/usr/bin/x86_64-w64-mingw32-ar \
+    -DCMAKE_RANLIB=/usr/bin/x86_64-w64-mingw32-ranlib \
+    -DCMAKE_FIND_ROOT_PATH=/ucrt64 \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+    -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+    -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
+    -DCMAKE_INSTALL_PREFIX=/ucrt64 \
+    "$@"

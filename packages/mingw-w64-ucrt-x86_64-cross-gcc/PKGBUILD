@@ -1,0 +1,68 @@
+pkgname=mingw-w64-ucrt-x86_64-cross-gcc
+pkgver=16.1.0
+pkgrel=1
+pkgdesc="GCC cross-compiler for x86_64-w64-mingw32 UCRT64 (bootstrap)"
+arch=('x86_64')
+url="https://gcc.gnu.org/"
+license=('GPL')
+depends=(
+    'mingw-w64-ucrt-x86_64-cross-binutils'
+    'mingw-w64-ucrt-x86_64-cross-crt'
+    'mingw-w64-ucrt-x86_64-cross-winpthreads'
+)
+provides=(
+    'mingw-w64-ucrt-x86_64-gcc'
+    'mingw-w64-ucrt-x86_64-gcc-libs'
+    'mingw-w64-ucrt-x86_64-cc'
+)
+conflicts=(
+    'mingw-w64-ucrt-x86_64-gcc'
+    'mingw-w64-ucrt-x86_64-gcc-libs'
+)
+
+package() {
+    local _target=x86_64-w64-mingw32
+    local _gccver=16.1.0
+
+    # Cross-compiler binaries
+    mkdir -p "${pkgdir}/usr/bin"
+    for tool in gcc g++ cpp gcov gcov-dump gcov-tool \
+                gcc-ar gcc-nm gcc-ranlib lto-dump; do
+        if [[ -f "/usr/bin/${_target}-${tool}" ]]; then
+            install -Dm755 "/usr/bin/${_target}-${tool}" "${pkgdir}/usr/bin/${_target}-${tool}"
+        fi
+    done
+
+    # cc symlink
+    ln -sf "${_target}-gcc" "${pkgdir}/usr/bin/${_target}-cc"
+
+    # GCC libraries and support files
+    if [[ -d "/usr/lib/gcc/${_target}" ]]; then
+        mkdir -p "${pkgdir}/usr/lib/gcc"
+        cp -a "/usr/lib/gcc/${_target}" "${pkgdir}/usr/lib/gcc/"
+    fi
+
+    if [[ -d "/usr/libexec/gcc/${_target}" ]]; then
+        mkdir -p "${pkgdir}/usr/libexec/gcc"
+        cp -a "/usr/libexec/gcc/${_target}" "${pkgdir}/usr/libexec/gcc/"
+    fi
+
+    # Runtime DLLs and libs in the sysroot
+    mkdir -p "${pkgdir}/ucrt64/bin" "${pkgdir}/ucrt64/lib"
+
+    for dll in libgcc_s_seh-1.dll libstdc++-6.dll libatomic-1.dll \
+               libgomp-1.dll libquadmath-0.dll libgfortran-5.dll \
+               libssp-0.dll; do
+        if [[ -f "/ucrt64/bin/${dll}" ]]; then
+            install -Dm755 "/ucrt64/bin/${dll}" "${pkgdir}/ucrt64/bin/${dll}"
+        fi
+    done
+
+    # Static/import libs
+    for lib in libgcc.a libgcc_s.a libstdc++.a libstdc++fs.a libsupc++.a \
+               libatomic.a libgomp.a libquadmath.a; do
+        if [[ -f "/ucrt64/lib/${lib}" ]]; then
+            install -Dm644 "/ucrt64/lib/${lib}" "${pkgdir}/ucrt64/lib/${lib}"
+        fi
+    done
+}

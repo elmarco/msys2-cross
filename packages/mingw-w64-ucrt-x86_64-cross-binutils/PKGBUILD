@@ -1,0 +1,35 @@
+pkgname=mingw-w64-ucrt-x86_64-cross-binutils
+pkgver=2.46
+pkgrel=1
+pkgdesc="GNU Binutils for x86_64-w64-mingw32 cross-compilation (bootstrap)"
+arch=('x86_64')
+url="https://www.gnu.org/software/binutils/"
+license=('GPL')
+provides=(
+    'mingw-w64-ucrt-x86_64-binutils'
+)
+conflicts=('mingw-w64-ucrt-x86_64-binutils')
+
+package() {
+    local _target=x86_64-w64-mingw32
+
+    mkdir -p "${pkgdir}/usr/bin"
+    for tool in addr2line ar as c++filt dlltool dllwrap elfedit gprof ld ld.bfd \
+                nm objcopy objdump ranlib readelf size strings strip windmc windres; do
+        if [[ -f "/usr/bin/${_target}-${tool}" ]]; then
+            install -Dm755 "/usr/bin/${_target}-${tool}" "${pkgdir}/usr/bin/${_target}-${tool}"
+        fi
+    done
+
+    # Copy target-specific libs and headers
+    if [[ -d "/usr/${_target}" ]]; then
+        mkdir -p "${pkgdir}/usr/${_target}"
+        cp -a "/usr/${_target}/lib" "${pkgdir}/usr/${_target}/" 2>/dev/null || true
+    fi
+
+    # Copy lib/bfd-plugins if present
+    if [[ -d "/usr/lib/bfd-plugins" ]]; then
+        mkdir -p "${pkgdir}/usr/lib"
+        cp -a "/usr/lib/bfd-plugins" "${pkgdir}/usr/lib/"
+    fi
+}

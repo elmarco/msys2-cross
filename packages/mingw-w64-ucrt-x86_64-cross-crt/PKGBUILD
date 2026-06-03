@@ -1,0 +1,25 @@
+pkgname=mingw-w64-ucrt-x86_64-cross-crt
+pkgver=14.0.0
+pkgrel=1
+pkgdesc="MinGW-w64 CRT for UCRT64 (bootstrap)"
+arch=('any')
+url="https://www.mingw-w64.org/"
+license=('custom')
+depends=('mingw-w64-ucrt-x86_64-cross-headers')
+provides=(
+    'mingw-w64-ucrt-x86_64-crt-git'
+)
+conflicts=('mingw-w64-ucrt-x86_64-crt-git')
+
+package() {
+    mkdir -p "${pkgdir}/ucrt64/lib"
+    # CRT object files and libraries
+    cp -a /ucrt64/lib/*.o "${pkgdir}/ucrt64/lib/" 2>/dev/null || true
+    cp -a /ucrt64/lib/*.a "${pkgdir}/ucrt64/lib/" 2>/dev/null || true
+
+    # Exclude GCC and winpthreads libraries (packaged separately)
+    rm -f "${pkgdir}"/ucrt64/lib/libgcc* 2>/dev/null || true
+    rm -f "${pkgdir}"/ucrt64/lib/libstdc++* 2>/dev/null || true
+    rm -f "${pkgdir}"/ucrt64/lib/libpthread* 2>/dev/null || true
+    rm -f "${pkgdir}"/ucrt64/lib/libwinpthread* 2>/dev/null || true
+}
