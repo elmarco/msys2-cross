@@ -34,34 +34,38 @@ if [[ ! -f PKGBUILD ]]; then
     exit 1
 fi
 
-# --- Auto-rewrite PKGBUILD for cross-compilation ---
+# --- Modify PKGBUILD for cross-compilation ---
 # Back up the original so we can restore it after build
 cp PKGBUILD PKGBUILD.orig
 
-# 1. Fix --build=${MINGW_CHOST} → --build=<linux-triple>
-#    MSYS2 PKGBUILDs assume the build machine is mingw32.
-sed -i \
-    -e "s|--build=\${MINGW_CHOST}|--build=${BUILD_TRIPLE}|g" \
-    -e "s|--build=\${CHOST}|--build=${BUILD_TRIPLE}|g" \
-    -e "s|--build=\${MINGW_CHOST//\-/\-}|--build=${BUILD_TRIPLE}|g" \
-    PKGBUILD
-
-# 2. Fix CHOST=${MINGW_CHOST} used as env var prefix to configure.
-#    zlib-style: CHOST=${MINGW_CHOST} ./configure ...
-#    This makes config.guess detect the build machine as mingw32.
-#    Rewrite to pass --host explicitly instead.
-sed -i \
-    -e 's|CHOST=\${MINGW_CHOST} \(\.\./[^ ]*/configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
-    -e 's|CHOST=\${MINGW_CHOST} \(\./configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
-    PKGBUILD
-
-# --- Apply per-package patch if one exists ---
+# 1. Apply per-package patch FIRST (patches match upstream PKGBUILD)
 _pkgbase=$(basename "$(pwd)")
 _patch="${PATCHES_DIR}/${_pkgbase}.patch"
 if [[ -f "${_patch}" ]]; then
     msg "Applying cross-compilation patch: ${_pkgbase}.patch"
     patch -p1 < "${_patch}"
 fi
+
+# 2. Auto-rewrite common MSYS2 patterns for cross-compilation
+
+# Add --host and --build to every configure call that has --prefix=${MINGW_PREFIX}.
+# If the PKGBUILD already has --host/--build, the duplicates are harmless
+# (autotools uses the last value, or it's the same value).
+sed -i \
+    -e "s|--prefix=\${MINGW_PREFIX}|--host=\${MINGW_CHOST} --build=${BUILD_TRIPLE} --prefix=\${MINGW_PREFIX}|g" \
+    PKGBUILD
+
+# Fix --build=${MINGW_CHOST} → --build=<linux-triple> (for explicit --build)
+sed -i \
+    -e "s|--build=\${MINGW_CHOST}|--build=${BUILD_TRIPLE}|g" \
+    -e "s|--build=\${CHOST}|--build=${BUILD_TRIPLE}|g" \
+    PKGBUILD
+
+# Fix CHOST=${MINGW_CHOST} ./configure pattern (zlib-style)
+sed -i \
+    -e 's|CHOST=\${MINGW_CHOST} \(\.\./[^ ]*/configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
+    -e 's|CHOST=\${MINGW_CHOST} \(\./configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
+    PKGBUILD
 
 # --- Build ---
 # --nodeps: skip MSYS-layer dependency checks (autoconf, python, etc.)

@@ -1,0 +1,18 @@
+--- a/PKGBUILD
++++ b/PKGBUILD
+@@ -51,6 +51,7 @@
+   mkdir -p "${srcdir}/static-${MSYSTEM}" && cd "${srcdir}/static-${MSYSTEM}"
+   ../${_realname}-${pkgver}/configure \
+     --build=${MINGW_CHOST} \
++    --host=${MINGW_CHOST} \
+     --prefix=${MINGW_PREFIX} \
+     --enable-cxx \
+     "${extra_config[@]}" \
+@@ -61,6 +62,7 @@
+   mkdir -p "${srcdir}/shared-${MSYSTEM}" && cd "${srcdir}/shared-${MSYSTEM}"
+   ../${_realname}-${pkgver}/configure \
+     --build=${MINGW_CHOST} \
++    --host=${MINGW_CHOST} \
+     --prefix=${MINGW_PREFIX} \
+     --enable-cxx \
+     "${extra_config[@]}" \
