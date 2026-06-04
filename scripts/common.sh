@@ -49,7 +49,4 @@ download_and_extract() {
     fi
 }
 
-# Create build directories (only inside containers)
-if [[ -w /build ]] || mkdir -p "${SRC_DIR}" "${BUILD_DIR}" "${INSTALL_STAGING}" 2>/dev/null; then
-    true
-fi
+mkdir -p "${SRC_DIR}" "${BUILD_DIR}" "${INSTALL_STAGING}" 2>/dev/null || true

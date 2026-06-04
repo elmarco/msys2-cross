@@ -13,8 +13,13 @@ sed -i '/MSYS2_ARG_CONV_EXCL/d' PKGBUILD
 # Python scripts to .exe wrappers. Replace with host python3.
 sed -i 's|${MINGW_PREFIX}/bin/python3|/usr/bin/python3|g' PKGBUILD
 
-# Remove Windows python deps (we use host python for build-time scripts)
-sed -i '/"${MINGW_PACKAGE_PREFIX}-python"$/d' PKGBUILD
-sed -i '/"${MINGW_PACKAGE_PREFIX}-python-packaging"$/d' PKGBUILD
-sed -i '/"${MINGW_PACKAGE_PREFIX}-python-setuptools"$/d' PKGBUILD
-sed -i '/"${MINGW_PACKAGE_PREFIX}-python-docutils"$/d' PKGBUILD
+# Replace Windows python deps with empty strings (preserve array structure)
+sed -i 's|"${MINGW_PACKAGE_PREFIX}-python"|""|g' PKGBUILD
+sed -i 's|"${MINGW_PACKAGE_PREFIX}-python-packaging"|""|g' PKGBUILD
+sed -i 's|"${MINGW_PACKAGE_PREFIX}-python-setuptools"|""|g' PKGBUILD
+sed -i 's|"${MINGW_PACKAGE_PREFIX}-python-docutils"|""|g' PKGBUILD
+sed -i 's|"${MINGW_PACKAGE_PREFIX}-gettext-runtime"|""|g' PKGBUILD
+sed -i 's|"${MINGW_PACKAGE_PREFIX}-gettext-tools"|""|g' PKGBUILD
+
+# Allow meson to download proxy-libintl fallback (gettext not available)
+sed -i 's/--wrap-mode=nodownload/--wrap-mode=default/' PKGBUILD
