@@ -20,25 +20,19 @@ if [[ ! -d "${MINGW_PACKAGES_DIR}" ]]; then
 fi
 
 # Core packages to build, in dependency order.
-# These are the minimal set needed to bootstrap further builds.
 CORE_PACKAGES=(
     mingw-w64-bzip2
     mingw-w64-zlib
     mingw-w64-xz
     mingw-w64-zstd
     mingw-w64-libiconv
+    mingw-w64-gettext
     mingw-w64-libffi
     mingw-w64-pcre2
     mingw-w64-expat
-    # gmp/mpfr/mpc: GMP's configure scans compiled objects assuming ELF
-    # format but cross-compiler produces PE/COFF. Needs Wine or Fedora's
-    # mingw64-gmp patches. Uncomment when Wine is available.
-    # mingw-w64-gmp
-    # mingw-w64-mpfr
-    # mingw-w64-mpc
 )
 
-build_mingw_package() {
+build_and_install() {
     local pkg="$1"
 
     echo ""
@@ -46,7 +40,6 @@ build_mingw_package() {
     echo "Building ${pkg}"
     echo "========================================="
 
-    # Sparse checkout just this package
     cd "${MINGW_PACKAGES_DIR}"
     git sparse-checkout add "${pkg}"
 
@@ -55,11 +48,8 @@ build_mingw_package() {
         return 0
     fi
 
-    cd "${MINGW_PACKAGES_DIR}/${pkg}"
-
     local _pkgdir="${MINGW_PACKAGES_DIR}/${pkg}"
 
-    # Build with our cross-compilation makepkg-mingw
     if [[ "$(id -u)" == "0" ]]; then
         chown -R builduser: "${_pkgdir}" "${REPO_DIR}"
         su builduser -s /bin/bash -c "cd '${_pkgdir}' && '${MAKEPKG_MINGW}' --skipchecksums --skippgpcheck --nocheck --force" \
@@ -68,6 +58,7 @@ build_mingw_package() {
                 return 0
             }
     else
+        cd "${_pkgdir}"
         "${MAKEPKG_MINGW}" --skipchecksums --skippgpcheck --nocheck --force \
             2>&1 || {
                 echo "WARNING: Failed to build ${pkg}, continuing..."
@@ -75,20 +66,26 @@ build_mingw_package() {
             }
     fi
 
-    # Move built packages to repo and install
+    # Move packages to repo
     mv "${_pkgdir}"/*.pkg.tar.* "${REPO_DIR}/" 2>/dev/null || true
-    repo-add "${REPO_DIR}/msys2-cross.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.* 2>/dev/null || true
 
+    # Install immediately so later packages can depend on them
     for pkgfile in "${REPO_DIR}"/mingw-w64-ucrt-x86_64-*"${pkg#mingw-w64-}"*.pkg.tar.*; do
         if [[ -f "${pkgfile}" ]]; then
-            pacman --config "${PACMAN_CONF}" -U --noconfirm --overwrite='*' "${pkgfile}" 2>/dev/null || true
+            echo "==> Installing ${pkgfile##*/}"
+            pacman --config "${PACMAN_CONF}" -U --noconfirm --overwrite='*' "${pkgfile}" || {
+                echo "WARNING: Failed to install ${pkgfile##*/}"
+            }
         fi
     done
 }
 
 for pkg in "${CORE_PACKAGES[@]}"; do
-    build_mingw_package "${pkg}"
+    build_and_install "${pkg}"
 done
+
+# Update repo database with all packages
+repo-add "${REPO_DIR}/msys2-cross.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.* 2>/dev/null || true
 
 echo ""
 echo "========================================="

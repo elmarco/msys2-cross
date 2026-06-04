@@ -1,6 +1,12 @@
 # MSYS2 Linux Bootstrap
 
-Cross-compilation bootstrap that builds a GCC toolchain targeting `x86_64-w64-mingw32` (UCRT64) on Fedora Linux, then provides `makepkg-mingw` so unmodified MSYS2 MINGW-packages PKGBUILDs can be built on Linux.
+## Goal
+
+Build Windows (PE) binaries from Linux/Fedora by reusing the MSYS2 MINGW-packages ecosystem. Instead of maintaining a separate set of cross-compilation recipes, this project lets you take unmodified MSYS2 PKGBUILDs and build them on a Linux host — producing the same Windows DLLs, libraries, and executables that MSYS2 would, but without needing a Windows or MSYS2 environment.
+
+## How it works
+
+A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from source on Fedora Linux, then `makepkg-mingw` is provided so MSYS2 MINGW-packages PKGBUILDs can be built on Linux without modification.
 
 ## Project layout
 

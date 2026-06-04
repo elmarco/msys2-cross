@@ -15,10 +15,12 @@ SYSROOT=/ucrt64
 # Build parallelism
 JOBS=$(nproc)
 
-# Source download directory
+# Directories
 SRC_DIR=/build/src
 BUILD_DIR=/build/build
 INSTALL_STAGING=/build/staging
+# Pre-downloaded sources (populated by download-sources.sh, COPY'd in)
+SOURCES_CACHE=/build/sources
 
 # Source URLs
 GCC_URL="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
@@ -31,8 +33,14 @@ download_and_extract() {
     local archive="${url##*/}"
 
     if [[ ! -d "$dest" ]]; then
-        echo "==> Downloading ${archive}..."
-        curl -fSL -o "${SRC_DIR}/${archive}" "$url"
+        # Use pre-downloaded source if available, otherwise download
+        if [[ -f "${SOURCES_CACHE}/${archive}" ]]; then
+            echo "==> Using cached ${archive}"
+            cp "${SOURCES_CACHE}/${archive}" "${SRC_DIR}/${archive}"
+        else
+            echo "==> Downloading ${archive}..."
+            curl -fSL -o "${SRC_DIR}/${archive}" "$url"
+        fi
         echo "==> Extracting ${archive}..."
         mkdir -p "$dest"
         tar xf "${SRC_DIR}/${archive}" -C "$dest" --strip-components=1
@@ -41,4 +49,7 @@ download_and_extract() {
     fi
 }
 
-mkdir -p "${SRC_DIR}" "${BUILD_DIR}" "${INSTALL_STAGING}"
+# Create build directories (only inside containers)
+if [[ -w /build ]] || mkdir -p "${SRC_DIR}" "${BUILD_DIR}" "${INSTALL_STAGING}" 2>/dev/null; then
+    true
+fi

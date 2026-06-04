@@ -15,6 +15,7 @@
 FROM fedora:latest AS toolchain-builder
 
 COPY scripts/ /opt/msys2-bootstrap/scripts/
+COPY sources/ /build/sources/
 RUN bash /opt/msys2-bootstrap/scripts/00-install-host-deps.sh \
     && bash /opt/msys2-bootstrap/scripts/01-build-binutils.sh \
     && bash /opt/msys2-bootstrap/scripts/02-build-headers.sh \
@@ -47,8 +48,8 @@ RUN mkdir -p /usr/x86_64-w64-mingw32 /ucrt64/bin \
     && ln -sfn /ucrt64/lib /usr/x86_64-w64-mingw32/lib \
     && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-cmake /ucrt64/bin/cmake \
     && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-meson /ucrt64/bin/meson \
-    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-pkg-config /ucrt64/bin/pkg-config \
-    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-pkg-config /ucrt64/bin/pkgconf
+    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-meson /ucrt64/bin/meson.exe \
+    && ln -sfn /opt/msys2-bootstrap/wrappers/mingw-pkg-config /ucrt64/bin/x86_64-w64-mingw32-pkg-config
 
 # Install build infrastructure
 COPY config/ /opt/msys2-bootstrap/config/
