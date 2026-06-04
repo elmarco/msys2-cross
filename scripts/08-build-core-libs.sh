@@ -6,9 +6,9 @@ echo "========================================="
 echo "Stage 8: Build core MINGW libraries"
 echo "========================================="
 
-MAKEPKG_MINGW=/opt/msys2-bootstrap/config/makepkg-mingw
-REPO_DIR=/opt/msys2-bootstrap/repo
-PACMAN_CONF=/opt/msys2-bootstrap/config/pacman-mingw.conf
+MAKEPKG_MINGW=/opt/msys2-cross/config/makepkg-mingw
+REPO_DIR=/opt/msys2-cross/repo
+PACMAN_CONF=/opt/msys2-cross/config/pacman-mingw.conf
 MINGW_PACKAGES_DIR=/build/MINGW-packages
 
 # Clone MINGW-packages if not present

@@ -7,8 +7,8 @@ url="https://cmake.org/"
 license=('MIT')
 
 package() {
-    install -Dm755 /opt/msys2-bootstrap/wrappers/mingw-cmake \
-        "${pkgdir}/opt/msys2-bootstrap/wrappers/mingw-cmake"
-    install -Dm644 /opt/msys2-bootstrap/config/toolchain.cmake \
-        "${pkgdir}/opt/msys2-bootstrap/config/toolchain.cmake"
+    install -Dm755 /opt/msys2-cross/wrappers/mingw-cmake \
+        "${pkgdir}/opt/msys2-cross/wrappers/mingw-cmake"
+    install -Dm644 /opt/msys2-cross/config/toolchain.cmake \
+        "${pkgdir}/opt/msys2-cross/config/toolchain.cmake"
 }

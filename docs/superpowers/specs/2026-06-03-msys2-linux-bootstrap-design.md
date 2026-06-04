@@ -30,7 +30,7 @@ The system has three layers:
   include/                        # Windows API + library headers
   share/                          # pkgconfig, cmake modules, data files
 
-/opt/msys2-bootstrap/             # Our infrastructure
+/opt/msys2-cross/             # Our infrastructure
   scripts/                        # Bootstrap build scripts (stages 0-6)
   config/                         # makepkg-mingw config, pacman config
   wrappers/                       # cmake/meson/pkg-config wrappers, cygpath shim
@@ -117,7 +117,7 @@ The Linux-adapted makepkg-mingw is a modified version of MSYS2's ~120-line scrip
 | MSYS2 behavior | Linux adaptation |
 |---|---|
 | Spawns MSYS2 login shell for MSYSTEM env | Directly exports env vars |
-| Sources `/etc/makepkg_mingw.d/${arch}.conf` | Sources `/opt/msys2-bootstrap/config/` |
+| Sources `/etc/makepkg_mingw.d/${arch}.conf` | Sources `/opt/msys2-cross/config/` |
 | Relies on MSYS2's PATH mutation per MSYSTEM | Explicitly sets PATH to include cross-tools |
 
 ### makepkg_mingw.conf changes
@@ -128,7 +128,7 @@ The Linux-adapted makepkg-mingw is a modified version of MSYS2's ~120-line scrip
 
 ### Build system wrappers
 
-Installed to `/opt/msys2-bootstrap/wrappers/` and added to PATH:
+Installed to `/opt/msys2-cross/wrappers/` and added to PATH:
 
 - **`mingw-cmake`**: Sets `CMAKE_SYSTEM_NAME=Windows`, cross-compiler paths, `CMAKE_FIND_ROOT_PATH=/ucrt64`
 - **`mingw-meson`**: Provides a cross file with cross-tool binaries and `[host_machine] system = 'windows'`
@@ -138,7 +138,7 @@ Installed to `/opt/msys2-bootstrap/wrappers/` and added to PATH:
 ## pacman Configuration
 
 ```ini
-# /opt/msys2-bootstrap/config/pacman-mingw.conf
+# /opt/msys2-cross/config/pacman-mingw.conf
 [options]
 RootDir     = /
 DBPath      = /var/lib/pacman/mingw/
@@ -146,7 +146,7 @@ CacheDir    = /var/cache/pacman/mingw/pkg/
 Architecture = any
 
 [local]
-Server = file:///opt/msys2-bootstrap/repo
+Server = file:///opt/msys2-cross/repo
 ```
 
 `RootDir=/` so packages install to their expected `/ucrt64/` paths. Separate `DBPath` isolates from any system pacman.
@@ -197,7 +197,7 @@ Makes `./foo.exe` transparently invoke `wine foo.exe`. Required for ~5-10% of pa
 ## Project Repository Structure
 
 ```
-msys2-bootstrap/
+msys2-cross/
   Containerfile
   scripts/
     common.sh                          # Shared variables (versions, configure flags)

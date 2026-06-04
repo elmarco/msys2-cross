@@ -1,4 +1,4 @@
-# msys2-bootstrap
+# msys2-cross
 
 Cross-compile Windows (PE) binaries on Linux using unmodified [MSYS2 MINGW-packages](https://github.com/msys2/MINGW-packages) PKGBUILDs.
 
@@ -48,7 +48,7 @@ podman run --rm \
     -v ~/src/MINGW-packages:/src \
     msys2-cross \
     bash -c "
-        pacman --config /opt/msys2-bootstrap/config/pacman-mingw.conf \
+        pacman --config /opt/msys2-cross/config/pacman-mingw.conf \
             -Udd --noconfirm --overwrite='*' \
             /src/mingw-w64-libpng/*.pkg.tar.zst
     "
@@ -113,7 +113,7 @@ Rules:
 | Problem | Symptom | Patch fix |
 |---|---|---|
 | Build runs `.exe` at build time | `cannot execute binary file` or `Permission denied` | Disable the feature (`--disable-X`) or skip with `sed` |
-| Calls `${MINGW_PREFIX}/bin/meson.exe` | `No such file or directory` | Replace with `/opt/msys2-bootstrap/wrappers/mingw-meson` |
+| Calls `${MINGW_PREFIX}/bin/meson.exe` | `No such file or directory` | Replace with `/opt/msys2-cross/wrappers/mingw-meson` |
 | Calls `${MINGW_PREFIX}/bin/python3` | `No such file or directory` | Replace with `/usr/bin/python3` |
 | `MSYS2_ARG_CONV_EXCL` | Harmless but noisy | `sed -i '/MSYS2_ARG_CONV_EXCL/d'` |
 | GObject introspection | `g-ir-scanner not found` | `sed -i 's/_enable_gir=yes/_enable_gir=no/'` |
@@ -135,7 +135,7 @@ podman start msys2-dev
 # Build and install a dependency
 podman exec msys2-dev bash -c "
     cd /src/mingw-w64-libpng && makepkg-mingw -sf --skipchecksums --skippgpcheck --nocheck
-    pacman --config /opt/msys2-bootstrap/config/pacman-mingw.conf \
+    pacman --config /opt/msys2-cross/config/pacman-mingw.conf \
         -Udd --noconfirm --overwrite='*' *.pkg.tar.zst
 "
 

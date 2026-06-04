@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-BOOTSTRAP_DIR=/opt/msys2-bootstrap
+BOOTSTRAP_DIR=/opt/msys2-cross
 PATCHES_DIR="${BOOTSTRAP_DIR}/patches"
 BUILD_TRIPLE=$(gcc -dumpmachine)
 

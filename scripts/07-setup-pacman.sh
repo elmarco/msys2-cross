@@ -6,9 +6,9 @@ echo "========================================="
 echo "Stage 7: Set up pacman + local repo"
 echo "========================================="
 
-REPO_DIR=/opt/msys2-bootstrap/repo
-PACMAN_CONF=/opt/msys2-bootstrap/config/pacman-mingw.conf
-PKG_DIR=/opt/msys2-bootstrap/packages
+REPO_DIR=/opt/msys2-cross/repo
+PACMAN_CONF=/opt/msys2-cross/config/pacman-mingw.conf
+PKG_DIR=/opt/msys2-cross/packages
 
 # makepkg refuses to run as root; create a build user
 if [[ "$(id -u)" == "0" ]]; then
@@ -26,8 +26,8 @@ mkdir -p "${REPO_DIR}"
 pacman --config "${PACMAN_CONF}" -Sy --noconfirm 2>/dev/null || true
 
 # Make wrappers executable
-chmod +x /opt/msys2-bootstrap/wrappers/*
-chmod +x /opt/msys2-bootstrap/config/makepkg-mingw
+chmod +x /opt/msys2-cross/wrappers/*
+chmod +x /opt/msys2-cross/config/makepkg-mingw
 
 # Build toolchain packages from the bootstrap artifacts.
 # These are "repackaging" PKGBUILDs that capture the already-installed
@@ -41,7 +41,7 @@ build_package() {
 
     # Use host makepkg (not makepkg-mingw) since these are packaging
     # scripts, not cross-compilation builds.
-    local _conf=/opt/msys2-bootstrap/config/makepkg_mingw.conf
+    local _conf=/opt/msys2-cross/config/makepkg_mingw.conf
 
     if [[ "$(id -u)" == "0" ]]; then
         chown -R builduser: "${pkgdir}"

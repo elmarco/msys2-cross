@@ -69,9 +69,9 @@ First build takes 30-60 min (GCC compilation). The multi-stage Containerfile cac
 
 Run smoke tests inside the container:
 ```sh
-podman run msys2-cross bash /opt/msys2-bootstrap/tests/test-zlib.sh
-podman run msys2-cross bash /opt/msys2-bootstrap/tests/test-cmake-project.sh
-podman run msys2-cross bash /opt/msys2-bootstrap/tests/test-meson-project.sh
+podman run msys2-cross bash /opt/msys2-cross/tests/test-zlib.sh
+podman run msys2-cross bash /opt/msys2-cross/tests/test-cmake-project.sh
+podman run msys2-cross bash /opt/msys2-cross/tests/test-meson-project.sh
 ```
 
 ## Known issues to watch for

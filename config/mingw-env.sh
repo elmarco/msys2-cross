@@ -16,4 +16,4 @@ export PKG_CONFIG_PATH="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgc
 export PKG_CONFIG_SYSROOT_DIR="${MINGW_PREFIX}"
 export PKG_CONFIG_LIBDIR="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgconfig"
 
-export PATH="/opt/msys2-bootstrap/wrappers:${MINGW_PREFIX}/bin:${PATH}"
+export PATH="/opt/msys2-cross/wrappers:${MINGW_PREFIX}/bin:${PATH}"

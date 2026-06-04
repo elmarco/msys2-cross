@@ -1,6 +1,6 @@
 # glib2 calls ${MINGW_PREFIX}/bin/meson.exe — fix to use our wrapper.
 sed -i \
-    -e 's|${MINGW_PREFIX}/bin/meson\.exe setup|/opt/msys2-bootstrap/wrappers/mingw-meson|g' \
+    -e 's|${MINGW_PREFIX}/bin/meson\.exe setup|/opt/msys2-cross/wrappers/mingw-meson|g' \
     -e 's|${MINGW_PREFIX}/bin/meson\.exe compile|/usr/bin/meson compile|g' \
     -e 's|${MINGW_PREFIX}/bin/meson\.exe install|/usr/bin/meson install|g' \
     PKGBUILD

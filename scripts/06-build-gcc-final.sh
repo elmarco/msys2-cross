@@ -41,7 +41,7 @@ cd "${BUILD_DIR}/gcc-final"
     --with-system-zlib \
     --with-gnu-as \
     --with-gnu-ld \
-    --with-pkgversion="msys2-bootstrap cross-compiler" \
+    --with-pkgversion="msys2-cross cross-compiler" \
     --with-boot-ldflags="-static-libstdc++"
 
 make -j"${JOBS}"

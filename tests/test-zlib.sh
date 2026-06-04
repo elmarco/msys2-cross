@@ -38,7 +38,7 @@ echo "PASS: Built ${pkg_count} package(s):"
 ls -la *.pkg.tar.zst
 
 # Verify we can install it
-pacman --config /opt/msys2-bootstrap/config/pacman-mingw.conf \
+pacman --config /opt/msys2-cross/config/pacman-mingw.conf \
     -U --noconfirm *.pkg.tar.zst
 
 # Verify files were installed

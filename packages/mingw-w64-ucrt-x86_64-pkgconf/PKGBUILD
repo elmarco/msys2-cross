@@ -11,11 +11,11 @@ provides=(
 conflicts=('mingw-w64-ucrt-x86_64-pkg-config')
 
 package() {
-    install -Dm755 /opt/msys2-bootstrap/wrappers/mingw-pkg-config \
-        "${pkgdir}/opt/msys2-bootstrap/wrappers/mingw-pkg-config"
+    install -Dm755 /opt/msys2-cross/wrappers/mingw-pkg-config \
+        "${pkgdir}/opt/msys2-cross/wrappers/mingw-pkg-config"
 
     # Also install as the prefixed name that some build systems look for
     mkdir -p "${pkgdir}/usr/bin"
-    ln -sf /opt/msys2-bootstrap/wrappers/mingw-pkg-config \
+    ln -sf /opt/msys2-cross/wrappers/mingw-pkg-config \
         "${pkgdir}/usr/bin/x86_64-w64-mingw32-pkg-config"
 }

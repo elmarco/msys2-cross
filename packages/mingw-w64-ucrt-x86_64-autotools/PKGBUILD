@@ -7,5 +7,5 @@ url="https://www.gnu.org/software/automake/"
 license=('GPL')
 
 package() {
-    mkdir -p "${pkgdir}/opt/msys2-bootstrap"
+    mkdir -p "${pkgdir}/opt/msys2-cross"
 }
