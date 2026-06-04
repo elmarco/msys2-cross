@@ -1,0 +1,252 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+IMAGE_NAME="msys2-cross"
+CONTAINER_NAME="msys2-cross-dev"
+MINGW_PACKAGES_DIR="${SCRIPT_DIR}/MINGW-packages"
+PACMAN_CONF="/opt/msys2-cross/config/pacman-mingw.conf"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+msg()  { echo -e "${GREEN}==>${NC} ${BOLD}$1${NC}"; }
+warn() { echo -e "${YELLOW}==> WARNING:${NC} ${BOLD}$1${NC}"; }
+err()  { echo -e "${RED}==> ERROR:${NC} ${BOLD}$1${NC}" >&2; }
+
+usage() {
+    cat <<'EOF'
+Usage: msys2-cross <command> [args...]
+
+Commands:
+  setup                 First-time setup: download sources, build container,
+                        clone MINGW-packages
+  build <pkg> [...]     Build one or more MINGW packages
+                        (e.g., mingw-w64-libpng or just libpng)
+  install <pkg> [...]   Install built packages into the container's sysroot
+  shell                 Open an interactive shell in the build container
+  run <cmd...>          Run an arbitrary command in the build container
+  list                  List installed packages in the sysroot
+  rebuild               Rebuild the container image
+
+Package names can omit the "mingw-w64-" prefix:
+  msys2-cross build libpng    →  builds mingw-w64-libpng
+EOF
+    exit "${1:-0}"
+}
+
+# Normalize package name: "libpng" → "mingw-w64-libpng"
+normalize_pkg() {
+    local pkg="$1"
+    if [[ "$pkg" != mingw-w64-* ]]; then
+        pkg="mingw-w64-${pkg}"
+    fi
+    echo "$pkg"
+}
+
+# Ensure MINGW-packages is cloned
+ensure_mingw_packages() {
+    if [[ ! -d "${MINGW_PACKAGES_DIR}/.git" ]]; then
+        msg "Cloning MINGW-packages (sparse)..."
+        git clone --filter=blob:none --sparse \
+            https://github.com/msys2/MINGW-packages.git \
+            "${MINGW_PACKAGES_DIR}"
+    fi
+}
+
+# Sparse checkout a package
+checkout_pkg() {
+    local pkg="$1"
+    ensure_mingw_packages
+    cd "${MINGW_PACKAGES_DIR}"
+    if [[ ! -d "${pkg}" ]]; then
+        msg "Checking out ${pkg}..."
+        git sparse-checkout add "${pkg}"
+    fi
+    if [[ ! -d "${pkg}" ]]; then
+        err "Package ${pkg} not found in MINGW-packages"
+        return 1
+    fi
+}
+
+# Ensure container image exists
+ensure_image() {
+    if ! podman image exists "${IMAGE_NAME}"; then
+        err "Container image '${IMAGE_NAME}' not found. Run: msys2-cross setup"
+        exit 1
+    fi
+}
+
+# Start or reuse the persistent dev container
+ensure_container() {
+    ensure_image
+    if podman container exists "${CONTAINER_NAME}" 2>/dev/null; then
+        if [[ "$(podman inspect -f '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null)" != "true" ]]; then
+            podman start "${CONTAINER_NAME}" >/dev/null
+        fi
+    else
+        msg "Creating persistent container ${CONTAINER_NAME}..."
+        podman create \
+            --name "${CONTAINER_NAME}" \
+            -v "${MINGW_PACKAGES_DIR}:/src" \
+            -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
+            -v "${SCRIPT_DIR}/config/makepkg-mingw:/opt/msys2-cross/config/makepkg-mingw:ro" \
+            "${IMAGE_NAME}" sleep infinity >/dev/null
+        podman start "${CONTAINER_NAME}" >/dev/null
+    fi
+}
+
+# Run a command in the persistent container
+cexec() {
+    ensure_container
+    podman exec "${CONTAINER_NAME}" "$@"
+}
+
+# Fix ownership of files created by the container
+fix_ownership() {
+    local dir="$1"
+    if [[ -d "$dir" ]]; then
+        podman unshare chown -R "$(id -u):$(id -g)" "$dir" 2>/dev/null || true
+    fi
+}
+
+cmd_setup() {
+    msg "Setting up msys2-cross..."
+
+    # Download sources
+    if [[ ! -d "${SCRIPT_DIR}/sources" ]] || [[ -z "$(ls -A "${SCRIPT_DIR}/sources" 2>/dev/null)" ]]; then
+        msg "Downloading toolchain sources..."
+        bash "${SCRIPT_DIR}/scripts/download-sources.sh"
+    else
+        msg "Sources already downloaded"
+    fi
+
+    # Build container
+    if podman image exists "${IMAGE_NAME}"; then
+        msg "Container image already exists"
+    else
+        msg "Building container (this takes 30-60 minutes)..."
+        podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+    fi
+
+    # Clone MINGW-packages
+    ensure_mingw_packages
+
+    echo ""
+    msg "Setup complete! Try:"
+    echo "  ./msys2-cross build zlib"
+    echo "  ./msys2-cross shell"
+}
+
+cmd_build() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross build <pkg> [...]"
+        exit 1
+    fi
+
+    ensure_mingw_packages
+
+    for raw_pkg in "$@"; do
+        local pkg
+        pkg=$(normalize_pkg "$raw_pkg")
+
+        checkout_pkg "$pkg"
+
+        msg "Building ${pkg}..."
+        ensure_container
+
+        cexec bash -c "cd /src/${pkg} && makepkg-mingw -sf --skipchecksums --skippgpcheck --nocheck"
+
+        # Fix ownership of built packages
+        fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+
+        # Show result
+        local pkgs
+        pkgs=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" -newer "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null)
+        if [[ -n "$pkgs" ]]; then
+            msg "Built packages:"
+            echo "$pkgs" | while read -r f; do echo "  ${f##*/}"; done
+        fi
+    done
+}
+
+cmd_install() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross install <pkg> [...]"
+        exit 1
+    fi
+
+    ensure_container
+
+    for raw_pkg in "$@"; do
+        local pkg
+        pkg=$(normalize_pkg "$raw_pkg")
+
+        local pkgfiles
+        pkgfiles=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" 2>/dev/null | head -20)
+
+        if [[ -z "$pkgfiles" ]]; then
+            err "No built packages found for ${pkg}. Run: msys2-cross build ${raw_pkg}"
+            continue
+        fi
+
+        msg "Installing ${pkg}..."
+        for f in $pkgfiles; do
+            local fname="${f##*/}"
+            cexec bash -c "pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /src/${pkg}/${fname}"
+        done
+    done
+}
+
+cmd_shell() {
+    ensure_container
+    msg "Entering msys2-cross shell (persistent container: ${CONTAINER_NAME})"
+    echo "  Sysroot:  /ucrt64"
+    echo "  Packages: /src"
+    echo "  Compiler: x86_64-w64-mingw32-gcc"
+    echo ""
+    podman exec -it "${CONTAINER_NAME}" bash
+}
+
+cmd_run() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross run <command...>"
+        exit 1
+    fi
+    ensure_container
+    cexec "$@"
+}
+
+cmd_list() {
+    ensure_container
+    cexec pacman --config "${PACMAN_CONF}" -Q
+}
+
+cmd_rebuild() {
+    msg "Rebuilding container image..."
+    # Stop and remove persistent container if it exists
+    podman rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+    msg "Rebuild complete"
+}
+
+# --- Main ---
+if [[ $# -eq 0 ]]; then
+    usage
+fi
+
+case "$1" in
+    setup)    shift; cmd_setup "$@" ;;
+    build)    shift; cmd_build "$@" ;;
+    install)  shift; cmd_install "$@" ;;
+    shell)    shift; cmd_shell "$@" ;;
+    run)      shift; cmd_run "$@" ;;
+    list)     shift; cmd_list "$@" ;;
+    rebuild)  shift; cmd_rebuild "$@" ;;
+    help|-h|--help) usage 0 ;;
+    *)        err "Unknown command: $1"; usage 1 ;;
+esac

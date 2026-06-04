@@ -6,55 +6,58 @@ Instead of maintaining a separate set of cross-compilation recipes, this project
 
 ## Quick start
 
-### 1. Build the container (one-time, ~30-60 min)
+```sh
+# One-time setup: downloads sources, builds container, clones MINGW-packages
+./msys2-cross setup
+
+# Build a package
+./msys2-cross build libpng
+
+# Install it into the sysroot (so other packages can depend on it)
+./msys2-cross install libpng
+
+# Build something that depends on it
+./msys2-cross build libwebp
+
+# Interactive shell
+./msys2-cross shell
+```
+
+The `msys2-cross` script manages a persistent container — installed packages
+survive across builds, so you can build dependency chains incrementally.
+
+### Available commands
+
+| Command | Description |
+|---|---|
+| `setup` | First-time setup: download sources, build container, clone MINGW-packages |
+| `build <pkg> [...]` | Build one or more packages |
+| `install <pkg> [...]` | Install built packages into the sysroot |
+| `shell` | Interactive shell in the build container |
+| `run <cmd...>` | Run an arbitrary command in the container |
+| `list` | List installed packages |
+| `rebuild` | Rebuild the container image |
+
+Package names can omit the `mingw-w64-` prefix: `build libpng` works like `build mingw-w64-libpng`.
+
+### Manual usage (without the script)
+
+If you prefer direct `podman` commands:
 
 ```sh
-# Download toolchain sources
+# Build the container
 ./scripts/download-sources.sh
-
-# Build the cross-compilation container
 podman build -t msys2-cross .
-```
 
-### 2. Clone MINGW-packages (one-time)
-
-```sh
+# Clone MINGW-packages
 git clone --filter=blob:none --sparse \
-    https://github.com/msys2/MINGW-packages.git ~/src/MINGW-packages
-```
+    https://github.com/msys2/MINGW-packages.git MINGW-packages
+cd MINGW-packages && git sparse-checkout add mingw-w64-libpng
 
-### 3. Build a package
-
-```sh
-# Checkout the package you want
-cd ~/src/MINGW-packages
-git sparse-checkout add mingw-w64-libpng
-
-# Build it
-podman run --rm \
-    -v ~/src/MINGW-packages:/src \
-    msys2-cross \
+# Build a package
+podman run --rm -v $PWD/MINGW-packages:/src msys2-cross \
     bash -c "cd /src/mingw-w64-libpng && makepkg-mingw -sf --skipchecksums --skippgpcheck --nocheck"
 ```
-
-The built `.pkg.tar.zst` package will be in the PKGBUILD directory.
-
-### 4. Install the result into the container's sysroot
-
-If you need the package installed for building other packages that depend on it:
-
-```sh
-podman run --rm \
-    -v ~/src/MINGW-packages:/src \
-    msys2-cross \
-    bash -c "
-        pacman --config /opt/msys2-cross/config/pacman-mingw.conf \
-            -Udd --noconfirm --overwrite='*' \
-            /src/mingw-w64-libpng/*.pkg.tar.zst
-    "
-```
-
-For persistent state across builds, use a named container or volume instead of `--rm`.
 
 ## What's in the container
 
@@ -121,31 +124,27 @@ Rules:
 | GMP-style configure | `long long reliability test` | `--disable-assembly` (or install Wine) |
 | `pyscript2exe.py` | `No module named 'setuptools'` | Disable the for loop: `sed -i 's/for name in .../for name in; do/'` |
 
-## Working with persistent state
+## Building dependency chains
 
-For building dependency chains (A depends on B), use a persistent container:
+The `msys2-cross` script uses a persistent container, so installed packages
+survive across builds:
 
 ```sh
-# Create a persistent container
-podman create --name msys2-dev \
-    -v ~/src/MINGW-packages:/src \
-    msys2-cross sleep infinity
-podman start msys2-dev
+# Build and install dependencies first
+./msys2-cross build zlib
+./msys2-cross install zlib
 
-# Build and install a dependency
-podman exec msys2-dev bash -c "
-    cd /src/mingw-w64-libpng && makepkg-mingw -sf --skipchecksums --skippgpcheck --nocheck
-    pacman --config /opt/msys2-cross/config/pacman-mingw.conf \
-        -Udd --noconfirm --overwrite='*' *.pkg.tar.zst
-"
+./msys2-cross build libpng
+./msys2-cross install libpng
 
-# Build the package that depends on it
-podman exec msys2-dev bash -c "
-    cd /src/mingw-w64-something-using-libpng && makepkg-mingw -sf --skipchecksums --skippgpcheck --nocheck
-"
+# Now build something that needs both
+./msys2-cross build libwebp
+```
 
-# Clean up
-podman rm -f msys2-dev
+To start fresh, remove the container:
+
+```sh
+podman rm -f msys2-cross-dev
 ```
 
 ## Limitations
