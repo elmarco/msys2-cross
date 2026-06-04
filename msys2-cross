@@ -23,8 +23,8 @@ usage() {
 Usage: msys2-cross <command> [args...]
 
 Commands:
-  setup                 First-time setup: download sources, build container,
-                        clone MINGW-packages
+  setup [--force]       First-time setup: download sources, build container,
+                        clone MINGW-packages. --force rebuilds the container
   build <pkg> [...]     Build one or more MINGW packages
                         (e.g., mingw-w64-libpng or just libpng)
   install <pkg> [...]   Install built packages into the container's sysroot
@@ -115,6 +115,14 @@ fix_ownership() {
 }
 
 cmd_setup() {
+    local force=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f|--force) force=1; shift ;;
+            *) err "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
     msg "Setting up msys2-cross..."
 
     # Download sources
@@ -126,8 +134,12 @@ cmd_setup() {
     fi
 
     # Build container
-    if podman image exists "${IMAGE_NAME}"; then
-        msg "Container image already exists"
+    if [[ "$force" -eq 1 ]]; then
+        msg "Force-rebuilding container..."
+        podman rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+        podman build --no-cache -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+    elif podman image exists "${IMAGE_NAME}"; then
+        msg "Container image already exists (use --force to rebuild)"
     else
         msg "Building container (this takes 30-60 minutes)..."
         podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
