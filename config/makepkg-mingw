@@ -70,11 +70,16 @@ sed -i \
 # --- Build ---
 # --nodeps: skip MSYS-layer dependency checks (autoconf, python, etc.)
 #           which don't exist in our pacman DB.
-makepkg \
-    --config "${MAKEPKG_CONF}" \
-    --nodeps \
-    "$@"
-_rc=$?
+if [[ "$(id -u)" == "0" ]]; then
+    # makepkg refuses to run as root — drop to builduser
+    useradd -m builduser 2>/dev/null || true
+    chown -R builduser: "$(pwd)"
+    su builduser -s /bin/bash -c "makepkg --config '${MAKEPKG_CONF}' --nodeps $*"
+    _rc=$?
+else
+    makepkg --config "${MAKEPKG_CONF}" --nodeps "$@"
+    _rc=$?
+fi
 
 # Restore original PKGBUILD
 mv PKGBUILD.orig PKGBUILD
