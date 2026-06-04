@@ -18,6 +18,7 @@ dnf install -y \
     tar xz bzip2 zstd \
     pacman fakeroot \
     perl po4a doxygen \
-    readline-devel
+    readline-devel \
+    python3-docutils
 
 dnf clean all
