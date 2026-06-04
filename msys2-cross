@@ -169,6 +169,22 @@ cmd_build() {
 
         checkout_pkg "$pkg"
 
+        # Download sources via a one-shot container (has network).
+        # The persistent build container runs with --network=none.
+        # Download sources via a one-shot container (has network).
+        # The persistent build container runs with --network=none.
+        msg "Downloading sources for ${pkg}..."
+        podman run --rm \
+            -v "${MINGW_PACKAGES_DIR}/${pkg}:/pkg" \
+            "${IMAGE_NAME}" \
+            bash -c "
+                source /opt/msys2-cross/config/mingw-env.sh
+                useradd -m builduser 2>/dev/null || true
+                chown -R builduser: /pkg
+                su builduser -s /bin/bash -c 'cd /pkg && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps'
+            "
+        fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+
         msg "Building ${pkg}..."
         ensure_container
 
