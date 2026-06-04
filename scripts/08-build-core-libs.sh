@@ -27,13 +27,15 @@ CORE_PACKAGES=(
     mingw-w64-xz
     mingw-w64-zstd
     mingw-w64-libiconv
-    mingw-w64-gettext-runtime
     mingw-w64-libffi
     mingw-w64-pcre2
     mingw-w64-expat
-    mingw-w64-gmp
-    mingw-w64-mpfr
-    mingw-w64-mpc
+    # gmp/mpfr/mpc: GMP's configure scans compiled objects assuming ELF
+    # format but cross-compiler produces PE/COFF. Needs Wine or Fedora's
+    # mingw64-gmp patches. Uncomment when Wine is available.
+    # mingw-w64-gmp
+    # mingw-w64-mpfr
+    # mingw-w64-mpc
 )
 
 build_mingw_package() {

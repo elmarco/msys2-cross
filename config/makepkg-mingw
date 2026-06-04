@@ -40,10 +40,10 @@ cp PKGBUILD PKGBUILD.orig
 
 # 1. Apply per-package patch FIRST (patches match upstream PKGBUILD)
 _pkgbase=$(basename "$(pwd)")
-_patch="${PATCHES_DIR}/${_pkgbase}.patch"
+_patch="${PATCHES_DIR}/${_pkgbase}.sh"
 if [[ -f "${_patch}" ]]; then
-    msg "Applying cross-compilation patch: ${_pkgbase}.patch"
-    patch -p1 < "${_patch}"
+    msg "Applying cross-compilation patch: ${_pkgbase}.sh"
+    source "${_patch}"
 fi
 
 # 2. Auto-rewrite common MSYS2 patterns for cross-compilation

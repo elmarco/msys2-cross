@@ -17,6 +17,7 @@ dnf install -y \
     diffutils findutils file which \
     tar xz bzip2 zstd \
     pacman fakeroot \
-    perl po4a doxygen
+    perl po4a doxygen \
+    readline-devel
 
 dnf clean all

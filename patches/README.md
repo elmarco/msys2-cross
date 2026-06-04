@@ -1,9 +1,8 @@
 # Cross-compilation patches for MINGW-packages
 
-Per-package patches applied automatically by `makepkg-mingw` before building.
+Per-package shell scripts applied automatically by `makepkg-mingw` before building.
 
-Naming convention: `<pkgbase>.patch` (e.g., `mingw-w64-zlib.patch`).
+Naming convention: `<pkgbase>.sh` (e.g., `mingw-w64-zlib.sh`).
 
-These are applied AFTER the automatic sed rewrites in makepkg-mingw, which
-handle the most common `--build=${MINGW_CHOST}` pattern. Patches here are
-for cases the auto-rewrite can't handle.
+These run BEFORE the automatic sed rewrites in makepkg-mingw and operate
+on the PKGBUILD via sed. They match the original upstream PKGBUILD text.
