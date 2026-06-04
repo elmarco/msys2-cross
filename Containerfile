@@ -65,6 +65,7 @@ RUN bash /opt/msys2-cross/scripts/07-setup-pacman.sh
 
 # Build core libraries (optional, can be skipped for faster image build)
 COPY scripts/08-build-core-libs.sh /opt/msys2-cross/scripts/
+COPY MINGW-packages/ /build/MINGW-packages/
 RUN bash /opt/msys2-cross/scripts/08-build-core-libs.sh
 
 # Environment setup

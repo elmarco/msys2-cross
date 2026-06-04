@@ -11,12 +11,12 @@ REPO_DIR=/opt/msys2-cross/repo
 PACMAN_CONF=/opt/msys2-cross/config/pacman-mingw.conf
 MINGW_PACKAGES_DIR=/build/MINGW-packages
 
-# Clone MINGW-packages if not present
+# MINGW-packages should be pre-populated by download-sources.sh and
+# COPY'd in by the Containerfile. No network access needed.
 if [[ ! -d "${MINGW_PACKAGES_DIR}" ]]; then
-    echo "==> Cloning MINGW-packages (sparse)..."
-    git clone --filter=blob:none --sparse \
-        https://github.com/msys2/MINGW-packages.git \
-        "${MINGW_PACKAGES_DIR}"
+    echo "==> ERROR: ${MINGW_PACKAGES_DIR} not found."
+    echo "==> Run scripts/download-sources.sh first."
+    exit 1
 fi
 
 # Core packages to build, in dependency order.

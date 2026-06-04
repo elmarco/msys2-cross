@@ -92,6 +92,7 @@ ensure_container() {
         msg "Creating persistent container ${CONTAINER_NAME}..."
         podman create \
             --name "${CONTAINER_NAME}" \
+            --network=none \
             -v "${MINGW_PACKAGES_DIR}:/src" \
             -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
             -v "${SCRIPT_DIR}/config/makepkg-mingw:/opt/msys2-cross/config/makepkg-mingw:ro" \
