@@ -25,9 +25,9 @@ Usage: msys2-cross <command> [args...]
 Commands:
   setup [--force]       First-time setup: download sources, build container,
                         clone MINGW-packages. --force rebuilds the container
-  build <pkg> [...]     Build one or more MINGW packages
-                        (e.g., mingw-w64-libpng or just libpng)
+  build <pkg> [...]     Build one or more MINGW packages (builds missing deps)
   install <pkg> [...]   Install built packages into the container's sysroot
+  deps <pkg>            Show missing dependencies for a package
   shell                 Open an interactive shell in the build container
   run <cmd...>          Run an arbitrary command in the build container
   list                  List installed packages in the sysroot
@@ -115,6 +115,170 @@ fix_ownership() {
     fi
 }
 
+# Cache of installed packages (populated once per run)
+_installed_cache=""
+
+refresh_installed_cache() {
+    _installed_cache=$(cexec pacman --config "${PACMAN_CONF}" -Qi 2>/dev/null \
+        | grep -E "^(Name|Provides)" \
+        | sed -e 's/^Name *: //' -e 's/^Provides *: //' \
+        | tr ' ' '\n' \
+        | sed 's/[><=].*//' \
+        | sort -u)
+}
+
+is_installed() {
+    local dep="$1"
+    if [[ -z "$_installed_cache" ]]; then
+        refresh_installed_cache
+    fi
+    echo "$_installed_cache" | grep -qx "$dep"
+}
+
+# Extract MINGW depends/makedepends from a PKGBUILD.
+# Sources the PKGBUILD in a subshell with MINGW env vars set.
+extract_deps() {
+    local pkgbuild="$1"
+    local pkgdir
+    pkgdir=$(dirname "$pkgbuild")
+    local pkgbase
+    pkgbase=$(basename "$pkgdir")
+
+    (
+        set +eu
+        # Work in a temp dir so patches can sed -i PKGBUILD
+        local tmpdir
+        tmpdir=$(mktemp -d)
+        cp "$pkgbuild" "${tmpdir}/PKGBUILD"
+        cd "$tmpdir"
+
+        # Apply patch if one exists (patches use sed -i on PKGBUILD)
+        local patch="${SCRIPT_DIR}/patches/${pkgbase}.sh"
+        if [[ -f "$patch" ]]; then
+            source "$patch" 2>/dev/null || true
+        fi
+
+        MINGW_PACKAGE_PREFIX="mingw-w64-ucrt-x86_64"
+        MINGW_PREFIX="/ucrt64"
+        MINGW_CHOST="x86_64-w64-mingw32"
+        MSYSTEM="UCRT64"
+        CARCH="x86_64"
+        check_option() { echo "n"; }
+        source PKGBUILD 2>/dev/null || true
+        for dep in "${depends[@]}" "${makedepends[@]}"; do
+            dep="${dep%%[><=]*}"
+            if [[ "$dep" == mingw-w64-ucrt-x86_64-* ]]; then
+                echo "$dep"
+            fi
+        done
+        rm -rf "$tmpdir"
+    ) 2>/dev/null | sort -u
+}
+
+# Map an installed package name back to its MINGW-packages source dir.
+# e.g., "mingw-w64-ucrt-x86_64-zlib" → "mingw-w64-zlib"
+installed_to_srcpkg() {
+    local ipkg="$1"
+    # Strip the environment prefix: mingw-w64-ucrt-x86_64-foo → foo
+    local name="${ipkg#mingw-w64-ucrt-x86_64-}"
+    echo "mingw-w64-${name}"
+}
+
+# Find missing deps for a package. Returns list of source package names
+# (mingw-w64-foo format) that need to be built.
+find_missing_deps() {
+    local pkg="$1"
+
+    checkout_pkg "$pkg" >/dev/null 2>&1
+
+    local pkgbuild="${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD"
+    if [[ ! -f "$pkgbuild" ]]; then
+        return
+    fi
+
+    local deps
+    deps=$(extract_deps "$pkgbuild")
+
+    for dep in $deps; do
+        if ! is_installed "$dep"; then
+            installed_to_srcpkg "$dep"
+        fi
+    done
+}
+
+# Recursively resolve all missing deps (topological order, depth-first).
+# Uses global arrays _resolve_visited and _resolve_result.
+declare -A _resolve_visited=()
+_resolve_result=()
+
+resolve_deps() {
+    local pkg="$1"
+
+    if [[ -n "${_resolve_visited[$pkg]+x}" ]]; then
+        return
+    fi
+    _resolve_visited[$pkg]=1
+
+    local missing
+    missing=$(find_missing_deps "$pkg")
+
+    for dep_src in $missing; do
+        resolve_deps "$dep_src"
+    done
+
+    _resolve_result+=("$pkg")
+}
+
+# Download sources for a single package
+download_sources() {
+    local pkg="$1"
+    msg "Downloading sources for ${pkg}..."
+    podman run --rm \
+        -v "${MINGW_PACKAGES_DIR}/${pkg}:/pkg" \
+        "${IMAGE_NAME}" \
+        bash -c "
+            source /opt/msys2-cross/config/mingw-env.sh
+            useradd -m builduser 2>/dev/null || true
+            chown -R builduser: /pkg
+            su builduser -s /bin/bash -c 'cd /pkg && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps -f'
+        "
+    fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+}
+
+# Build a single package (no dep resolution)
+build_single() {
+    local pkg="$1"
+    shift
+    local makepkg_args=("$@")
+
+    checkout_pkg "$pkg"
+    download_sources "$pkg"
+
+    msg "Building ${pkg}..."
+    ensure_container
+    cexec bash -c "cd /src/${pkg} && makepkg-mingw ${makepkg_args[*]}"
+    fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+}
+
+# Install a single package
+install_single() {
+    local pkg="$1"
+
+    local pkgfiles
+    pkgfiles=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" 2>/dev/null | head -20)
+
+    if [[ -z "$pkgfiles" ]]; then
+        err "No built packages found for ${pkg}"
+        return 1
+    fi
+
+    msg "Installing ${pkg}..."
+    for f in $pkgfiles; do
+        local fname="${f##*/}"
+        cexec bash -c "pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /src/${pkg}/${fname}" 2>&1
+    done
+}
+
 cmd_setup() {
     local force=0
     while [[ $# -gt 0 ]]; do
@@ -175,6 +339,7 @@ cmd_build() {
     makepkg_args+=("--skipchecksums" "--skippgpcheck" "--nocheck" "-sf")
 
     ensure_mingw_packages
+    ensure_container
 
     for raw_pkg in "${packages[@]}"; do
         local pkg
@@ -182,34 +347,49 @@ cmd_build() {
 
         checkout_pkg "$pkg"
 
-        # Download sources via a one-shot container (has network).
-        # The persistent build container runs with --network=none.
-        msg "Downloading sources for ${pkg}..."
-        podman run --rm \
-            -v "${MINGW_PACKAGES_DIR}/${pkg}:/pkg" \
-            "${IMAGE_NAME}" \
-            bash -c "
-                source /opt/msys2-cross/config/mingw-env.sh
-                useradd -m builduser 2>/dev/null || true
-                chown -R builduser: /pkg
-                su builduser -s /bin/bash -c 'cd /pkg && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps -f'
-            "
-        fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+        # Resolve missing dependencies
+        declare -A _resolve_visited=()
+        _resolve_result=()
+        resolve_deps "$pkg"
+        local -a build_order=("${_resolve_result[@]}")
 
-        msg "Building ${pkg}..."
-        ensure_container
+        # Build order includes the package itself as last entry.
+        # Everything before it is a missing dep.
+        if [[ ${#build_order[@]} -gt 1 ]]; then
+            msg "Dependency build order:"
+            for p in "${build_order[@]}"; do
+                if [[ "$p" == "$pkg" ]]; then
+                    echo "  ${p}  (target)"
+                else
+                    echo "  ${p}"
+                fi
+            done
+        fi
 
-        cexec bash -c "cd /src/${pkg} && makepkg-mingw ${makepkg_args[*]}"
+        for dep_pkg in "${build_order[@]}"; do
+            # Skip deps that are already installed
+            if [[ "$dep_pkg" != "$pkg" ]]; then
+                local dep_ipkg="mingw-w64-ucrt-x86_64-${dep_pkg#mingw-w64-}"
+                if is_installed "$dep_ipkg"; then
+                    msg "${dep_pkg} already installed, skipping"
+                    continue
+                fi
+            fi
 
-        # Fix ownership of built packages
-        fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+            build_single "$dep_pkg" "${makepkg_args[@]}"
 
-        # Show result
-        local pkgs
-        pkgs=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" -newer "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null)
-        if [[ -n "$pkgs" ]]; then
+            # Install deps (but not the final target package)
+            if [[ "$dep_pkg" != "$pkg" ]]; then
+                install_single "$dep_pkg" || warn "Failed to install ${dep_pkg}"
+            fi
+        done
+
+        # Show result for the target package
+        local built_pkgs
+        built_pkgs=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" -newer "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null)
+        if [[ -n "$built_pkgs" ]]; then
             msg "Built packages:"
-            echo "$pkgs" | while read -r f; do echo "  ${f##*/}"; done
+            echo "$built_pkgs" | while read -r f; do echo "  ${f##*/}"; done
         fi
     done
 }
@@ -225,21 +405,40 @@ cmd_install() {
     for raw_pkg in "$@"; do
         local pkg
         pkg=$(normalize_pkg "$raw_pkg")
-
-        local pkgfiles
-        pkgfiles=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" 2>/dev/null | head -20)
-
-        if [[ -z "$pkgfiles" ]]; then
-            err "No built packages found for ${pkg}. Run: msys2-cross build ${raw_pkg}"
-            continue
-        fi
-
-        msg "Installing ${pkg}..."
-        for f in $pkgfiles; do
-            local fname="${f##*/}"
-            cexec bash -c "pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /src/${pkg}/${fname}"
-        done
+        install_single "$pkg"
     done
+}
+
+cmd_deps() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross deps <pkg>"
+        exit 1
+    fi
+
+    ensure_mingw_packages
+    ensure_container
+
+    local pkg
+    pkg=$(normalize_pkg "$1")
+    checkout_pkg "$pkg"
+
+    declare -A _resolve_visited=()
+    _resolve_result=()
+    resolve_deps "$pkg"
+    local -a build_order=("${_resolve_result[@]}")
+
+    if [[ ${#build_order[@]} -le 1 ]]; then
+        msg "All dependencies for ${pkg} are satisfied"
+    else
+        msg "Missing dependencies (build order):"
+        for p in "${build_order[@]}"; do
+            if [[ "$p" == "$pkg" ]]; then
+                echo "  ${p}  (target)"
+            else
+                echo "  ${p}  (missing)"
+            fi
+        done
+    fi
 }
 
 cmd_shell() {
@@ -283,6 +482,7 @@ case "$1" in
     setup)    shift; cmd_setup "$@" ;;
     build)    shift; cmd_build "$@" ;;
     install)  shift; cmd_install "$@" ;;
+    deps)     shift; cmd_deps "$@" ;;
     shell)    shift; cmd_shell "$@" ;;
     run)      shift; cmd_run "$@" ;;
     list)     shift; cmd_list "$@" ;;
