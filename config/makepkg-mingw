@@ -66,12 +66,12 @@ sed -i \
     -e 's|CHOST=\${MINGW_CHOST} \(\./configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
     PKGBUILD
 
-# Replace meson.exe with our wrappers (setup vs compile/install)
+# Replace meson.exe / meson with our wrappers (setup vs compile/install)
 sed -i \
-    -e 's|${MINGW_PREFIX}/bin/meson\.exe setup|/opt/msys2-cross/wrappers/mingw-meson|g' \
-    -e 's|${MINGW_PREFIX}/bin/meson\.exe compile|/usr/bin/meson compile|g' \
-    -e 's|${MINGW_PREFIX}/bin/meson\.exe install|/usr/bin/meson install|g' \
-    -e 's|${MINGW_PREFIX}/bin/meson\.exe|/usr/bin/meson|g' \
+    -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} setup|/opt/msys2-cross/wrappers/mingw-meson|g' \
+    -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} compile|/usr/bin/meson compile|g' \
+    -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} install|/usr/bin/meson install|g' \
+    -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\}\b|/usr/bin/meson|g' \
     PKGBUILD
 
 # Replace cmake.exe with our wrapper
@@ -86,9 +86,10 @@ sed -i \
 sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" \\$//' PKGBUILD
 sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" //' PKGBUILD
 
-# Remove noextract + manual tar (MSYS2 path workaround, not needed on Linux)
+# Remove noextract + manual tar (MSYS2 path workaround, not needed on Linux).
+# Replace tar lines with 'true' instead of deleting (preserves function body).
 sed -i '/^noextract=/d' PKGBUILD
-sed -i '/^[[:space:]]*tar -xf.*\.tar/d' PKGBUILD
+sed -i 's|^[[:space:]]*tar -xf.*\.tar.*|  true  # noextract tar removed|' PKGBUILD
 
 # --- Build ---
 # --nodeps: skip MSYS-layer dependency checks (autoconf, python, etc.)

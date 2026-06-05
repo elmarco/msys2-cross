@@ -3,5 +3,6 @@
 # Replaces MSYS2's mingw-w64-ucrt-x86_64-meson wrapper.
 exec /usr/bin/meson setup \
     --cross-file /opt/msys2-cross/config/cross-file.meson \
+    --native-file /opt/msys2-cross/config/native-file.meson \
     --prefix /ucrt64 \
     "$@"
