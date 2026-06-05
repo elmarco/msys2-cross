@@ -50,10 +50,7 @@ RUN mkdir -p /usr/x86_64-w64-mingw32 /ucrt64/bin \
     && ln -sfn /opt/msys2-cross/wrappers/mingw-meson /ucrt64/bin/meson \
     && ln -sfn /opt/msys2-cross/wrappers/mingw-meson /ucrt64/bin/meson.exe \
     && ln -sfn /opt/msys2-cross/wrappers/mingw-pkg-config /ucrt64/bin/x86_64-w64-mingw32-pkg-config \
-    && ln -sfn /usr/bin/x86_64-w64-mingw32-gcc /ucrt64/bin/cc \
-    && ln -sfn /usr/bin/x86_64-w64-mingw32-gcc /ucrt64/bin/gcc \
-    && ln -sfn /usr/bin/x86_64-w64-mingw32-g++ /ucrt64/bin/g++ \
-    && ln -sfn /usr/bin/x86_64-w64-mingw32-g++ /ucrt64/bin/c++
+    && ln -sfn /usr/bin/x86_64-w64-mingw32-gcc /ucrt64/bin/cc
 
 # Install build infrastructure
 COPY config/ /opt/msys2-cross/config/
