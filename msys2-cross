@@ -33,6 +33,7 @@ Commands:
   list                  List installed packages in the sysroot
   list -u               List built but not installed packages
   list -a               List all packages known to cross-compile
+  restart [--network]   Recreate the container (--network enables network access)
   rebuild               Rebuild the container image
 
 Package names can omit the "mingw-w64-" prefix:
@@ -98,6 +99,9 @@ ensure_image() {
 }
 
 # Start or reuse the persistent dev container
+# Usage: ensure_container [--network]
+_container_network="none"
+
 ensure_container() {
     ensure_image
     if podman container exists "${CONTAINER_NAME}" 2>/dev/null; then
@@ -105,10 +109,10 @@ ensure_container() {
             podman start "${CONTAINER_NAME}" >/dev/null
         fi
     else
-        msg "Creating persistent container ${CONTAINER_NAME}..."
+        msg "Creating persistent container ${CONTAINER_NAME} (network=${_container_network})..."
         podman create \
             --name "${CONTAINER_NAME}" \
-            --network=none \
+            --network="${_container_network}" \
             -v "${MINGW_PACKAGES_DIR}:/src" \
             -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
             -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
@@ -429,6 +433,22 @@ cmd_rebuild() {
     msg "Rebuild complete"
 }
 
+cmd_restart() {
+    local network="none"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --network) network="slirp4netns"; shift ;;
+            *) err "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    msg "Restarting container (network=${network})..."
+    podman rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    _container_network="${network}"
+    ensure_container
+    msg "Container ready"
+}
+
 # --- Main ---
 if [[ $# -eq 0 ]]; then
     usage
@@ -443,6 +463,7 @@ case "$1" in
     run)      shift; cmd_run "$@" ;;
     list)     shift; cmd_list "$@" ;;
     rebuild)  shift; cmd_rebuild "$@" ;;
+    restart)  shift; cmd_restart "$@" ;;
     help|-h|--help) usage 0 ;;
     *)        err "Unknown command: $1"; usage 1 ;;
 esac

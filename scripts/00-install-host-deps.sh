@@ -20,6 +20,6 @@ dnf install -y \
     perl po4a doxygen \
     readline-devel \
     python3-docutils \
-    gtk-update-icon-cache gtk4
+    gtk-update-icon-cache
 
 dnf clean all
