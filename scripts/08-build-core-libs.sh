@@ -84,8 +84,13 @@ for pkg in "${CORE_PACKAGES[@]}"; do
     build_and_install "${pkg}"
 done
 
-# Update repo database with all packages
+# Update repo database and install ALL packages in one pass.
+# Individual installs above may fail on dep ordering (e.g., xz needs
+# gettext-runtime which is a split package from gettext). A single
+# pacman -U with all packages resolves inter-dependencies correctly.
 repo-add "${REPO_DIR}/msys2-cross.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.* 2>/dev/null || true
+echo "==> Installing all built packages..."
+pacman --config "${PACMAN_CONF}" -Udd --noconfirm --overwrite='*' "${REPO_DIR}"/*.pkg.tar.* || true
 
 echo ""
 echo "========================================="
