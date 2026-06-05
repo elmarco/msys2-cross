@@ -32,6 +32,7 @@ Commands:
   run <cmd...>          Run an arbitrary command in the build container
   list                  List installed packages in the sysroot
   list -u               List built but not installed packages
+  list -a               List all packages known to cross-compile
   rebuild               Rebuild the container image
 
 Package names can omit the "mingw-w64-" prefix:
@@ -385,23 +386,38 @@ cmd_run() {
 
 cmd_list() {
     ensure_container
-    if [[ "${1:-}" == "-u" ]]; then
-        # List built but not installed packages
-        msg "Built packages not installed in sysroot:"
-        local installed
-        installed=$(cexec pacman --config "${PACMAN_CONF}" -Q 2>/dev/null | awk '{print $1}')
-        find "${MINGW_PACKAGES_DIR}" -name "*.pkg.tar.*" 2>/dev/null | while read -r f; do
-            local fname="${f##*/}"
-            # Extract package name from filename: name-ver-rel-arch.pkg.tar.zst
-            local pname
-            pname=$(echo "$fname" | sed 's/-[0-9].*$//')
-            if ! echo "$installed" | grep -qx "$pname"; then
-                echo "  ${fname}"
-            fi
-        done
-    else
-        cexec pacman --config "${PACMAN_CONF}" -Q
-    fi
+    case "${1:-}" in
+        -u)
+            # List built but not installed packages
+            msg "Built packages not installed in sysroot:"
+            local installed
+            installed=$(cexec pacman --config "${PACMAN_CONF}" -Q 2>/dev/null | awk '{print $1}')
+            find "${MINGW_PACKAGES_DIR}" -name "*.pkg.tar.*" 2>/dev/null | while read -r f; do
+                local fname="${f##*/}"
+                local pname
+                pname=$(echo "$fname" | sed 's/-[0-9].*$//')
+                if ! echo "$installed" | grep -qx "$pname"; then
+                    echo "  ${fname}"
+                fi
+            done
+            ;;
+        -a)
+            # List all available packages from MINGW-packages repo
+            ensure_mingw_packages
+            msg "Available packages in MINGW-packages:"
+            cd "${MINGW_PACKAGES_DIR}"
+            git ls-tree -r --name-only HEAD | grep "^mingw-w64-.*/PKGBUILD$" | sed 's|/PKGBUILD||' | sort | while read -r pkg; do
+                local marker=""
+                if [[ -f "${SCRIPT_DIR}/patches/${pkg}.sh" ]]; then
+                    marker=" [patched]"
+                fi
+                echo "  ${pkg}${marker}"
+            done
+            ;;
+        *)
+            cexec pacman --config "${PACMAN_CONF}" -Q
+            ;;
+    esac
 }
 
 cmd_rebuild() {
