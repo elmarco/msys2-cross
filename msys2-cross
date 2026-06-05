@@ -156,21 +156,32 @@ cmd_setup() {
 }
 
 cmd_build() {
-    if [[ $# -eq 0 ]]; then
-        err "Usage: msys2-cross build <pkg> [...]"
+    local packages=()
+    local makepkg_args=()
+
+    for arg in "$@"; do
+        case "$arg" in
+            -*) makepkg_args+=("$arg") ;;
+            *)  packages+=("$arg") ;;
+        esac
+    done
+
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        err "Usage: msys2-cross build <pkg> [...] [makepkg flags]"
         exit 1
     fi
 
+    # Always force and skip checks for cross-compilation
+    makepkg_args+=("--skipchecksums" "--skippgpcheck" "--nocheck" "-sf")
+
     ensure_mingw_packages
 
-    for raw_pkg in "$@"; do
+    for raw_pkg in "${packages[@]}"; do
         local pkg
         pkg=$(normalize_pkg "$raw_pkg")
 
         checkout_pkg "$pkg"
 
-        # Download sources via a one-shot container (has network).
-        # The persistent build container runs with --network=none.
         # Download sources via a one-shot container (has network).
         # The persistent build container runs with --network=none.
         msg "Downloading sources for ${pkg}..."
@@ -188,7 +199,7 @@ cmd_build() {
         msg "Building ${pkg}..."
         ensure_container
 
-        cexec bash -c "cd /src/${pkg} && makepkg-mingw -sf --skipchecksums --skippgpcheck --nocheck"
+        cexec bash -c "cd /src/${pkg} && makepkg-mingw ${makepkg_args[*]}"
 
         # Fix ownership of built packages
         fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
