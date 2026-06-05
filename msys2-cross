@@ -58,19 +58,33 @@ ensure_mingw_packages() {
     fi
 }
 
-# Sparse checkout a package
+# Sparse checkout a package. Handles split packages by trying the
+# base name if the full name doesn't exist (e.g., mingw-w64-gettext-runtime
+# → mingw-w64-gettext).
 checkout_pkg() {
     local pkg="$1"
     ensure_mingw_packages
     cd "${MINGW_PACKAGES_DIR}"
     if [[ ! -d "${pkg}" ]]; then
-        msg "Checking out ${pkg}..."
-        git sparse-checkout add "${pkg}"
+        git sparse-checkout add "${pkg}" 2>/dev/null
     fi
     if [[ ! -d "${pkg}" ]]; then
+        # Try stripping split-package suffixes
+        for suffix in -runtime -tools -libs -devel -git; do
+            local base="${pkg%${suffix}}"
+            if [[ "$base" != "$pkg" ]]; then
+                git sparse-checkout add "${base}" 2>/dev/null
+                if [[ -d "${base}" ]]; then
+                    # Return the base name via a global
+                    _checkout_actual="${base}"
+                    return 0
+                fi
+            fi
+        done
         err "Package ${pkg} not found in MINGW-packages"
         return 1
     fi
+    _checkout_actual="${pkg}"
 }
 
 # Ensure container image exists
@@ -98,6 +112,9 @@ ensure_container() {
             -v "${SCRIPT_DIR}/config/makepkg-mingw:/opt/msys2-cross/config/makepkg-mingw:ro" \
             "${IMAGE_NAME}" sleep infinity >/dev/null
         podman start "${CONTAINER_NAME}" >/dev/null
+        # Install all packages from the repo that aren't yet installed
+        msg "Installing pre-built packages..."
+        cexec bash -c "pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /opt/msys2-cross/repo/*.pkg.tar.* 2>/dev/null" || true
     fi
 }
 
@@ -176,7 +193,17 @@ build_single() {
 
     msg "Building ${pkg}..."
     ensure_container
-    cexec bash -c "cd /src/${pkg} && makepkg-mingw ${makepkg_args[*]}"
+    # Copy sources into the container to avoid corrupting the bind-mount.
+    # Keep the same directory name so makepkg-mingw finds the right patch.
+    # Built packages are copied back afterwards.
+    cexec bash -c "
+        rm -rf /tmp/build/${pkg}
+        mkdir -p /tmp/build
+        cp -a /src/${pkg} /tmp/build/${pkg}
+        cd /tmp/build/${pkg}
+        makepkg-mingw ${makepkg_args[*]}
+        cp -f /tmp/build/${pkg}/*.pkg.tar.* /src/${pkg}/ 2>/dev/null || true
+    "
     fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
 }
 
@@ -277,8 +304,9 @@ cmd_build() {
 
             for dep in $missing; do
                 checkout_pkg "$dep" 2>/dev/null || { warn "Cannot find ${dep}, skipping"; continue; }
-                build_single "$dep" "${makepkg_args[@]}" || { warn "Failed to build ${dep}"; continue; }
-                install_single "$dep" || warn "Failed to install ${dep}"
+                local dep_src="${_checkout_actual}"
+                build_single "$dep_src" "${makepkg_args[@]}" || { warn "Failed to build ${dep_src}"; continue; }
+                install_single "$dep_src" || warn "Failed to install ${dep_src}"
             done
         fi
 
