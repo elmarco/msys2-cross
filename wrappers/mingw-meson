@@ -1,6 +1,20 @@
 #!/bin/bash
 # Meson wrapper for UCRT64 cross-compilation.
-# Replaces MSYS2's mingw-w64-ucrt-x86_64-meson wrapper.
+#
+# Called two ways:
+#   1. Via sed rewrite: "meson.exe setup ..." → "mingw-meson ..."  (no "setup" in $@)
+#   2. Via PATH symlink: "meson setup ..." → "mingw-meson setup ..." ("setup" in $1)
+#   3. Via PATH symlink: "meson compile ..." → "mingw-meson compile ..." (passthrough)
+
+case "${1:-}" in
+    compile|install|test|dist|configure|introspect|init|wrap|subprojects|rewrite|devenv|env2mfile|format|fmt|help)
+        exec /usr/bin/meson "$@"
+        ;;
+    setup)
+        shift  # strip "setup" — we add it below
+        ;;
+esac
+
 exec /usr/bin/meson setup \
     --cross-file /opt/msys2-cross/config/cross-file.meson \
     --native-file /opt/msys2-cross/config/native-file.meson \
