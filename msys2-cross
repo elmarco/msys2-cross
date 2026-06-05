@@ -437,7 +437,7 @@ cmd_restart() {
     local network="none"
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --network) network="slirp4netns"; shift ;;
+            --network) network="pasta"; shift ;;
             *) err "Unknown option: $1"; exit 1 ;;
         esac
     done
