@@ -192,7 +192,7 @@ cmd_build() {
                 source /opt/msys2-cross/config/mingw-env.sh
                 useradd -m builduser 2>/dev/null || true
                 chown -R builduser: /pkg
-                su builduser -s /bin/bash -c 'cd /pkg && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps'
+                su builduser -s /bin/bash -c 'cd /pkg && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps -f'
             "
         fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
 
