@@ -67,6 +67,9 @@ build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cmake"
 build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-ninja"
 build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-meson"
 build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-pkgconf"
+build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-python-docutils"
+build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gi-docgen"
+build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gobject-introspection"
 
 # Create repo database
 echo "==> Creating repo database..."

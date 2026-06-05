@@ -1,0 +1,10 @@
+pkgname=mingw-w64-ucrt-x86_64-gobject-introspection
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy gobject-introspection — not needed for cross-compilation"
+arch=('any')
+license=('MIT')
+
+package() {
+    mkdir -p "${pkgdir}/opt/msys2-cross"
+}
