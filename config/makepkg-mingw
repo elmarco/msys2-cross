@@ -48,11 +48,10 @@ fi
 
 # 2. Auto-rewrite common MSYS2 patterns for cross-compilation
 
-# Add --host and --build to every configure call that has --prefix=${MINGW_PREFIX}.
-# If the PKGBUILD already has --host/--build, the duplicates are harmless
-# (autotools uses the last value, or it's the same value).
+# Add --host and --build to autotools configure calls.
+# Only match lines containing "configure" (not meson/cmake).
 sed -i \
-    -e "s|--prefix=\${MINGW_PREFIX}|--host=\${MINGW_CHOST} --build=${BUILD_TRIPLE} --prefix=\${MINGW_PREFIX}|g" \
+    -e "/configure/s|--prefix=\${MINGW_PREFIX}|--host=\${MINGW_CHOST} --build=${BUILD_TRIPLE} --prefix=\${MINGW_PREFIX}|g" \
     PKGBUILD
 
 # Fix --build=${MINGW_CHOST} → --build=<linux-triple> (for explicit --build)
@@ -75,8 +74,17 @@ sed -i \
     -e 's|${MINGW_PREFIX}/bin/meson\.exe|/usr/bin/meson|g' \
     PKGBUILD
 
-# Remove MSYS2_ARG_CONV_EXCL (MSYS2-only path conversion suppression)
-sed -i '/MSYS2_ARG_CONV_EXCL/d' PKGBUILD
+# Replace cmake.exe with our wrapper
+sed -i \
+    -e 's|${MINGW_PREFIX}/bin/cmake\.exe|/ucrt64/bin/cmake|g' \
+    PKGBUILD
+
+# Remove MSYS2_ARG_CONV_EXCL (MSYS2-only path conversion suppression).
+# It's typically used as an env var prefix with line continuation:
+#   MSYS2_ARG_CONV_EXCL="--prefix=" \
+# Replace with nothing but preserve the command on the next line.
+sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" \\$//' PKGBUILD
+sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" //' PKGBUILD
 
 # Remove noextract + manual tar (MSYS2 path workaround, not needed on Linux)
 sed -i '/^noextract=/d' PKGBUILD
