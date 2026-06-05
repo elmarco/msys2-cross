@@ -115,80 +115,38 @@ fix_ownership() {
     fi
 }
 
-# Map an installed package name back to its MINGW-packages source dir.
-# e.g., "mingw-w64-ucrt-x86_64-zlib" → "mingw-w64-zlib"
-installed_to_srcpkg() {
-    local ipkg="$1"
-    local name="${ipkg#mingw-w64-ucrt-x86_64-}"
-    echo "mingw-w64-${name}"
-}
-
-# Find missing MINGW deps for a package using makepkg/pacman inside
-# the container. Returns source package names (mingw-w64-foo format).
+# Find missing MINGW deps for a package (direct only, no recursion).
+# Single podman exec call — fast. Returns source package names.
 find_missing_deps() {
     local pkg="$1"
 
     checkout_pkg "$pkg" >/dev/null 2>&1
     ensure_container
 
-    # Use pacman inside the container to check deps.
-    # Apply patches in a temp dir, source the PKGBUILD, check with pacman -Qq.
-    local missing
-    missing=$(cexec bash -c "
+    cexec bash -c "
         set +eu
         source /opt/msys2-cross/config/mingw-env.sh
+        PACMAN_CONF=${PACMAN_CONF}
 
-        # Work in a temp dir so patches can sed -i PKGBUILD
         tmpdir=\$(mktemp -d)
         cp /src/${pkg}/PKGBUILD \"\$tmpdir/PKGBUILD\"
         cd \"\$tmpdir\"
 
-        # Apply patch if one exists
         _patch=/opt/msys2-cross/patches/${pkg}.sh
-        if [[ -f \"\$_patch\" ]]; then
-            source \"\$_patch\" 2>/dev/null || true
-        fi
+        [[ -f \"\$_patch\" ]] && source \"\$_patch\" 2>/dev/null
 
-        # Source and extract MINGW deps
-        source PKGBUILD 2>/dev/null || true
+        source PKGBUILD 2>/dev/null
         for dep in \"\${depends[@]}\" \"\${makedepends[@]}\"; do
             dep=\"\${dep%%[><=]*}\"
             if [[ \"\$dep\" == mingw-w64-ucrt-x86_64-* ]]; then
-                # Check if installed (pacman -Qq handles provides)
-                if ! pacman --config ${PACMAN_CONF} -Qq \"\$dep\" 2>/dev/null; then
-                    echo \"\$dep\"
-                fi
+                pacman --config \$PACMAN_CONF -Qq \"\$dep\" &>/dev/null || {
+                    name=\"\${dep#mingw-w64-ucrt-x86_64-}\"
+                    echo \"mingw-w64-\$name\"
+                }
             fi
         done
         rm -rf \"\$tmpdir\"
-    " 2>/dev/null)
-
-    # Convert installed names to source package names
-    for dep in $missing; do
-        installed_to_srcpkg "$dep"
-    done
-}
-
-# Recursively resolve all missing deps (topological order, depth-first).
-declare -A _resolve_visited=()
-_resolve_result=()
-
-resolve_deps() {
-    local pkg="$1"
-
-    if [[ -n "${_resolve_visited[$pkg]+x}" ]]; then
-        return
-    fi
-    _resolve_visited[$pkg]=1
-
-    local missing
-    missing=$(find_missing_deps "$pkg")
-
-    for dep_src in $missing; do
-        resolve_deps "$dep_src"
-    done
-
-    _resolve_result+=("$pkg")
+    " 2>/dev/null | sort -u
 }
 
 # Download sources for a single package
@@ -309,38 +267,22 @@ cmd_build() {
 
         checkout_pkg "$pkg"
 
-        # Resolve missing dependencies
-        declare -A _resolve_visited=()
-        _resolve_result=()
-        resolve_deps "$pkg"
-        local -a build_order=("${_resolve_result[@]}")
+        # Find and build missing direct dependencies
+        local missing
+        missing=$(find_missing_deps "$pkg")
 
-        # Build order includes the package itself as last entry.
-        # Everything before it is a missing dep.
-        if [[ ${#build_order[@]} -gt 1 ]]; then
-            msg "Dependency build order:"
-            for p in "${build_order[@]}"; do
-                if [[ "$p" == "$pkg" ]]; then
-                    echo "  ${p}  (target)"
-                else
-                    echo "  ${p}"
-                fi
+        if [[ -n "$missing" ]]; then
+            msg "Missing dependencies:"
+            for dep in $missing; do echo "  ${dep}"; done
+
+            for dep in $missing; do
+                checkout_pkg "$dep" 2>/dev/null || { warn "Cannot find ${dep}, skipping"; continue; }
+                build_single "$dep" "${makepkg_args[@]}" || { warn "Failed to build ${dep}"; continue; }
+                install_single "$dep" || warn "Failed to install ${dep}"
             done
         fi
 
-        for dep_pkg in "${build_order[@]}"; do
-            # The resolve_deps walk already filtered to missing deps only,
-            # but a dep may have been installed during this build run.
-            # Skip if so (cheap local check against what we just installed).
-
-
-            build_single "$dep_pkg" "${makepkg_args[@]}"
-
-            # Install deps (but not the final target package)
-            if [[ "$dep_pkg" != "$pkg" ]]; then
-                install_single "$dep_pkg" || warn "Failed to install ${dep_pkg}"
-            fi
-        done
+        build_single "$pkg" "${makepkg_args[@]}"
 
         # Show result for the target package
         local built_pkgs
@@ -380,21 +322,15 @@ cmd_deps() {
     pkg=$(normalize_pkg "$1")
     checkout_pkg "$pkg"
 
-    declare -A _resolve_visited=()
-    _resolve_result=()
-    resolve_deps "$pkg"
-    local -a build_order=("${_resolve_result[@]}")
+    local missing
+    missing=$(find_missing_deps "$pkg")
 
-    if [[ ${#build_order[@]} -le 1 ]]; then
+    if [[ -z "$missing" ]]; then
         msg "All dependencies for ${pkg} are satisfied"
     else
-        msg "Missing dependencies (build order):"
-        for p in "${build_order[@]}"; do
-            if [[ "$p" == "$pkg" ]]; then
-                echo "  ${p}  (target)"
-            else
-                echo "  ${p}  (missing)"
-            fi
+        msg "Missing dependencies for ${pkg}:"
+        for p in $missing; do
+            echo "  ${p}"
         done
     fi
 }
