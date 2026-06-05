@@ -19,6 +19,7 @@ dnf install -y \
     pacman fakeroot \
     perl po4a doxygen \
     readline-devel \
-    python3-docutils
+    python3-docutils \
+    gtk-update-icon-cache gtk4
 
 dnf clean all
