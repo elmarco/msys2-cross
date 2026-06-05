@@ -115,99 +115,61 @@ fix_ownership() {
     fi
 }
 
-# Cache of installed packages (populated once per run)
-_installed_cache=""
-
-refresh_installed_cache() {
-    _installed_cache=$(cexec pacman --config "${PACMAN_CONF}" -Qi 2>/dev/null \
-        | grep -E "^(Name|Provides)" \
-        | sed -e 's/^Name *: //' -e 's/^Provides *: //' \
-        | tr ' ' '\n' \
-        | sed 's/[><=].*//' \
-        | sort -u)
-}
-
-is_installed() {
-    local dep="$1"
-    if [[ -z "$_installed_cache" ]]; then
-        refresh_installed_cache
-    fi
-    echo "$_installed_cache" | grep -qx "$dep"
-}
-
-# Extract MINGW depends/makedepends from a PKGBUILD.
-# Sources the PKGBUILD in a subshell with MINGW env vars set.
-extract_deps() {
-    local pkgbuild="$1"
-    local pkgdir
-    pkgdir=$(dirname "$pkgbuild")
-    local pkgbase
-    pkgbase=$(basename "$pkgdir")
-
-    (
-        set +eu
-        # Work in a temp dir so patches can sed -i PKGBUILD
-        local tmpdir
-        tmpdir=$(mktemp -d)
-        cp "$pkgbuild" "${tmpdir}/PKGBUILD"
-        cd "$tmpdir"
-
-        # Apply patch if one exists (patches use sed -i on PKGBUILD)
-        local patch="${SCRIPT_DIR}/patches/${pkgbase}.sh"
-        if [[ -f "$patch" ]]; then
-            source "$patch" 2>/dev/null || true
-        fi
-
-        MINGW_PACKAGE_PREFIX="mingw-w64-ucrt-x86_64"
-        MINGW_PREFIX="/ucrt64"
-        MINGW_CHOST="x86_64-w64-mingw32"
-        MSYSTEM="UCRT64"
-        CARCH="x86_64"
-        check_option() { echo "n"; }
-        source PKGBUILD 2>/dev/null || true
-        for dep in "${depends[@]}" "${makedepends[@]}"; do
-            dep="${dep%%[><=]*}"
-            if [[ "$dep" == mingw-w64-ucrt-x86_64-* ]]; then
-                echo "$dep"
-            fi
-        done
-        rm -rf "$tmpdir"
-    ) 2>/dev/null | sort -u
-}
-
 # Map an installed package name back to its MINGW-packages source dir.
 # e.g., "mingw-w64-ucrt-x86_64-zlib" → "mingw-w64-zlib"
 installed_to_srcpkg() {
     local ipkg="$1"
-    # Strip the environment prefix: mingw-w64-ucrt-x86_64-foo → foo
     local name="${ipkg#mingw-w64-ucrt-x86_64-}"
     echo "mingw-w64-${name}"
 }
 
-# Find missing deps for a package. Returns list of source package names
-# (mingw-w64-foo format) that need to be built.
+# Find missing MINGW deps for a package using makepkg/pacman inside
+# the container. Returns source package names (mingw-w64-foo format).
 find_missing_deps() {
     local pkg="$1"
 
     checkout_pkg "$pkg" >/dev/null 2>&1
+    ensure_container
 
-    local pkgbuild="${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD"
-    if [[ ! -f "$pkgbuild" ]]; then
-        return
-    fi
+    # Use pacman inside the container to check deps.
+    # Apply patches in a temp dir, source the PKGBUILD, check with pacman -Qq.
+    local missing
+    missing=$(cexec bash -c "
+        set +eu
+        source /opt/msys2-cross/config/mingw-env.sh
 
-    local deps
-    deps=$(extract_deps "$pkgbuild")
+        # Work in a temp dir so patches can sed -i PKGBUILD
+        tmpdir=\$(mktemp -d)
+        cp /src/${pkg}/PKGBUILD \"\$tmpdir/PKGBUILD\"
+        cd \"\$tmpdir\"
 
-    for dep in $deps; do
-        if ! is_installed "$dep"; then
-            installed_to_srcpkg "$dep"
+        # Apply patch if one exists
+        _patch=/opt/msys2-cross/patches/${pkg}.sh
+        if [[ -f \"\$_patch\" ]]; then
+            source \"\$_patch\" 2>/dev/null || true
         fi
+
+        # Source and extract MINGW deps
+        source PKGBUILD 2>/dev/null || true
+        for dep in \"\${depends[@]}\" \"\${makedepends[@]}\"; do
+            dep=\"\${dep%%[><=]*}\"
+            if [[ \"\$dep\" == mingw-w64-ucrt-x86_64-* ]]; then
+                # Check if installed (pacman -Qq handles provides)
+                if ! pacman --config ${PACMAN_CONF} -Qq \"\$dep\" 2>/dev/null; then
+                    echo \"\$dep\"
+                fi
+            fi
+        done
+        rm -rf \"\$tmpdir\"
+    " 2>/dev/null)
+
+    # Convert installed names to source package names
+    for dep in $missing; do
+        installed_to_srcpkg "$dep"
     done
 }
 
 # Recursively resolve all missing deps (topological order, depth-first).
-# Uses global arrays _resolve_visited and _resolve_result.
 declare -A _resolve_visited=()
 _resolve_result=()
 
@@ -367,14 +329,10 @@ cmd_build() {
         fi
 
         for dep_pkg in "${build_order[@]}"; do
-            # Skip deps that are already installed
-            if [[ "$dep_pkg" != "$pkg" ]]; then
-                local dep_ipkg="mingw-w64-ucrt-x86_64-${dep_pkg#mingw-w64-}"
-                if is_installed "$dep_ipkg"; then
-                    msg "${dep_pkg} already installed, skipping"
-                    continue
-                fi
-            fi
+            # The resolve_deps walk already filtered to missing deps only,
+            # but a dep may have been installed during this build run.
+            # Skip if so (cheap local check against what we just installed).
+
 
             build_single "$dep_pkg" "${makepkg_args[@]}"
 
