@@ -112,6 +112,7 @@ ensure_container() {
             -v "${MINGW_PACKAGES_DIR}:/src" \
             -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
             -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
+            -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
             "${IMAGE_NAME}" sleep infinity >/dev/null
         podman start "${CONTAINER_NAME}" >/dev/null
         # Install all packages from the repo that aren't yet installed
