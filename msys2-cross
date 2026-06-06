@@ -441,7 +441,7 @@ cmd_build() {
             local pkgs
             pkgs=$(find "${MINGW_PACKAGES_DIR}/${p}" -name "*.pkg.tar.*" 2>/dev/null)
             if [[ -n "$pkgs" ]]; then
-                echo "$pkgs" | while read -r f; do echo "  ${GREEN}OK${NC}  ${f##*/}"; done
+                echo "$pkgs" | while read -r f; do echo -e "  ${GREEN}OK${NC}  ${f##*/}"; done
             else
                 echo -e "  ${GREEN}OK${NC}  ${p}"
             fi
