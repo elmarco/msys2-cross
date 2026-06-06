@@ -139,7 +139,7 @@ fix_ownership() {
     fi
 }
 
-# Find missing MINGW deps for a package (direct only, no recursion).
+# Find missing MINGW deps for a package (direct only).
 # Single podman exec call — fast. Returns source package names.
 find_missing_deps() {
     local pkg="$1"
@@ -171,6 +171,98 @@ find_missing_deps() {
         done
         rm -rf \"\$tmpdir\"
     " 2>/dev/null | sort -u
+}
+
+# Recursively find all missing deps (transitive). Checkouts all needed
+# packages on the host, then does the full walk in a single podman exec.
+# Returns source package names in topological (build) order.
+find_all_missing_deps() {
+    local root_pkg="$1"
+
+    ensure_container
+
+    # First, checkout all packages we might need by doing a breadth-first
+    # checkout on the host (fast git operations, no podman overhead).
+    local -A checked_out=()
+    local queue=("$root_pkg")
+    while [[ ${#queue[@]} -gt 0 ]]; do
+        local pkg="${queue[0]}"
+        queue=("${queue[@]:1}")
+        [[ -n "${checked_out[$pkg]+x}" ]] && continue
+        checked_out[$pkg]=1
+        checkout_pkg "$pkg" >/dev/null 2>&1 || continue
+        # Quick grep for potential deps to checkout (no need for accuracy)
+        if [[ -f "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" ]]; then
+            grep -oP '\$\{MINGW_PACKAGE_PREFIX\}-\K[a-z0-9_-]+' \
+                "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null | \
+                sort -u | while read -r dep_name; do
+                    local dep_pkg="mingw-w64-${dep_name}"
+                    if [[ -z "${checked_out[$dep_pkg]+x}" ]]; then
+                        echo "$dep_pkg"
+                    fi
+                done | while read -r p; do queue+=("$p"); done
+        fi
+    done
+
+    # Now do the full recursive walk inside a single container exec.
+    cexec bash -c "
+        set +eu
+        source /opt/msys2-cross/config/mingw-env.sh
+        PACMAN_CONF=${PACMAN_CONF}
+
+        # Extract deps from a PKGBUILD, applying patches
+        get_deps() {
+            local srcpkg=\$1
+            [[ -d /src/\$srcpkg ]] || return
+
+            local tmpdir=\$(mktemp -d)
+            cp /src/\$srcpkg/PKGBUILD \"\$tmpdir/PKGBUILD\"
+            cd \"\$tmpdir\"
+
+            local _patch=/opt/msys2-cross/patches/\${srcpkg}.sh
+            [[ -f \"\$_patch\" ]] && source \"\$_patch\" 2>/dev/null
+
+            source PKGBUILD 2>/dev/null
+            for dep in \"\${depends[@]}\" \"\${makedepends[@]}\"; do
+                dep=\"\${dep%%[><=]*}\"
+                if [[ \"\$dep\" == mingw-w64-ucrt-x86_64-* ]]; then
+                    echo \"\$dep\"
+                fi
+            done
+            rm -rf \"\$tmpdir\"
+            cd /
+        }
+
+        # Recursive DFS
+        declare -A visited=()
+        result=()
+
+        resolve() {
+            local srcpkg=\$1
+            [[ -n \"\${visited[\$srcpkg]+x}\" ]] && return
+            visited[\$srcpkg]=1
+
+            local deps=\$(get_deps \"\$srcpkg\" | sort -u)
+            for dep in \$deps; do
+                pacman --config \$PACMAN_CONF -Qq \"\$dep\" &>/dev/null && continue
+                local name=\"\${dep#mingw-w64-ucrt-x86_64-}\"
+                local child=\"mingw-w64-\$name\"
+                resolve \"\$child\"
+            done
+
+            # Check if THIS package is missing
+            local ipkg=\"mingw-w64-ucrt-x86_64-\${srcpkg#mingw-w64-}\"
+            if ! pacman --config \$PACMAN_CONF -Qq \"\$ipkg\" &>/dev/null; then
+                result+=(\"\$srcpkg\")
+            fi
+        }
+
+        resolve \"${root_pkg}\"
+
+        for p in \"\${result[@]}\"; do
+            echo \"\$p\"
+        done
+    " 2>/dev/null
 }
 
 # Download sources for a single package
@@ -384,14 +476,20 @@ cmd_deps() {
     checkout_pkg "$pkg"
 
     local missing
-    missing=$(find_missing_deps "$pkg")
+    missing=$(find_all_missing_deps "$pkg")
 
     if [[ -z "$missing" ]]; then
         msg "All dependencies for ${pkg} are satisfied"
     else
-        msg "Missing dependencies for ${pkg}:"
+        local count
+        count=$(echo "$missing" | wc -l)
+        msg "Missing dependencies for ${pkg} (${count}, build order):"
         for p in $missing; do
-            echo "  ${p}"
+            if [[ "$p" == "$pkg" ]]; then
+                echo "  ${p}  (target)"
+            else
+                echo "  ${p}"
+            fi
         done
     fi
 }
