@@ -209,9 +209,13 @@ build_single() {
         cp -a /src/${pkg} /tmp/build/${pkg}
         cd /tmp/build/${pkg}
         makepkg-mingw ${makepkg_args[*]}
+        _rc=\$?
         cp -f /tmp/build/${pkg}/*.pkg.tar.* /src/${pkg}/ 2>/dev/null || true
+        exit \$_rc
     "
+    local rc=$?
     fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+    return $rc
 }
 
 # Install a single package
@@ -295,6 +299,9 @@ cmd_build() {
     ensure_mingw_packages
     ensure_container
 
+    local -a succeeded=()
+    local -a failed=()
+
     for raw_pkg in "${packages[@]}"; do
         local pkg
         pkg=$(normalize_pkg "$raw_pkg")
@@ -310,23 +317,42 @@ cmd_build() {
             for dep in $missing; do echo "  ${dep}"; done
 
             for dep in $missing; do
-                checkout_pkg "$dep" 2>/dev/null || { warn "Cannot find ${dep}, skipping"; continue; }
+                checkout_pkg "$dep" 2>/dev/null || { warn "Cannot find ${dep}, skipping"; failed+=("$dep"); continue; }
                 local dep_src="${_checkout_actual}"
-                build_single "$dep_src" "${makepkg_args[@]}" || { warn "Failed to build ${dep_src}"; continue; }
-                install_single "$dep_src" || warn "Failed to install ${dep_src}"
+                if build_single "$dep_src" "${makepkg_args[@]}"; then
+                    succeeded+=("$dep_src")
+                    install_single "$dep_src" || warn "Failed to install ${dep_src}"
+                else
+                    failed+=("$dep_src")
+                fi
             done
         fi
 
-        build_single "$pkg" "${makepkg_args[@]}"
-
-        # Show result for the target package
-        local built_pkgs
-        built_pkgs=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" -newer "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null)
-        if [[ -n "$built_pkgs" ]]; then
-            msg "Built packages:"
-            echo "$built_pkgs" | while read -r f; do echo "  ${f##*/}"; done
+        if build_single "$pkg" "${makepkg_args[@]}"; then
+            succeeded+=("$pkg")
+        else
+            failed+=("$pkg")
         fi
     done
+
+    # Summary
+    echo ""
+    if [[ ${#succeeded[@]} -gt 0 ]]; then
+        msg "Succeeded (${#succeeded[@]}):"
+        for p in "${succeeded[@]}"; do
+            local pkgs
+            pkgs=$(find "${MINGW_PACKAGES_DIR}/${p}" -name "*.pkg.tar.*" 2>/dev/null)
+            if [[ -n "$pkgs" ]]; then
+                echo "$pkgs" | while read -r f; do echo "  ${GREEN}OK${NC}  ${f##*/}"; done
+            else
+                echo -e "  ${GREEN}OK${NC}  ${p}"
+            fi
+        done
+    fi
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        err "Failed (${#failed[@]}):"
+        for p in "${failed[@]}"; do echo -e "  ${RED}FAIL${NC}  ${p}"; done
+    fi
 }
 
 cmd_install() {
