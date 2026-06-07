@@ -70,6 +70,8 @@ build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-pkgconf"
 build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-python-docutils"
 build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gi-docgen"
 build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gobject-introspection"
+build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-egl-headers"
+build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gles-headers"
 
 # Create repo database
 echo "==> Creating repo database..."

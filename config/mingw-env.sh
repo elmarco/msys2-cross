@@ -20,6 +20,6 @@ export PKG_CONFIG_LIBDIR="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pk
 # build_alias must also be set, otherwise autoconf defaults build=host
 # and thinks it's a native build (→ "cannot run C compiled programs").
 export host_alias="${MINGW_CHOST}"
-export build_alias="$(gcc -dumpmachine)"
+export build_alias="x86_64-redhat-linux"
 
 export PATH="/opt/msys2-cross/wrappers:${MINGW_PREFIX}/bin:${PATH}"
