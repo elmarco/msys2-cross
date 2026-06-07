@@ -352,7 +352,7 @@ cmd_setup() {
     if [[ "$force" -eq 1 ]]; then
         msg "Force-rebuilding container..."
         podman rm -f "${CONTAINER_NAME}" 2>/dev/null || true
-        podman build --no-cache -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+        podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
     elif podman image exists "${IMAGE_NAME}"; then
         msg "Container image already exists (use --force to rebuild)"
     else
