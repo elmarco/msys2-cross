@@ -18,7 +18,7 @@ dnf install -y \
     python3-markupsafe python3-mako python3-fonttools \
     python3-cython \
     \
-    perl ruby \
+    perl ruby rubygem-asciidoctor \
     doxygen graphviz swig vala \
     gtk-doc itstool \
     po4a nasm ragel \
