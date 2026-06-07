@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+
+# Extra host tools needed for building MINGW packages.
+# These are the native equivalents of the dummy pacman packages.
+# Changes here do NOT invalidate the toolchain cache.
+dnf install -y \
+    --setopt=install_weak_deps=False \
+    --setopt=keepcache=False \
+    --setopt=tsflags=nodocs \
+    --setopt=max_parallel_downloads=10 \
+    --setopt=fastestmirror=True \
+    \
+    python3-devel python3-pip \
+    python3-docutils python3-sphinx python3-lxml \
+    python3-setuptools python3-numpy python3-jinja2 \
+    python3-pygments python3-babel python3-packaging \
+    python3-markupsafe python3-mako python3-fonttools \
+    python3-cython \
+    \
+    perl ruby \
+    doxygen graphviz swig vala \
+    gtk-doc itstool \
+    po4a nasm ragel \
+    \
+    gtk-update-icon-cache
+
+dnf clean all

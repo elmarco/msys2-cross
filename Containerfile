@@ -30,9 +30,10 @@ RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh \
 # ===========================================================================
 FROM fedora:latest AS msys2-cross
 
-# Install host build dependencies
-COPY scripts/common.sh scripts/00-install-host-deps.sh /opt/msys2-cross/scripts/
+# Install host build dependencies (split: base + extras)
+COPY scripts/common.sh scripts/00-install-host-deps.sh scripts/00-install-extra-deps.sh /opt/msys2-cross/scripts/
 RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh
+RUN bash /opt/msys2-cross/scripts/00-install-extra-deps.sh
 
 # Copy cross-toolchain from builder stage
 COPY --from=toolchain-builder /ucrt64 /ucrt64
