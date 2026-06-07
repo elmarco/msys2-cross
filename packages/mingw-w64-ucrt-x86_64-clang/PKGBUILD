@@ -1,0 +1,10 @@
+pkgname=mingw-w64-ucrt-x86_64-clang
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy clang — host tool, not cross-compiled"
+arch=('any')
+license=('MIT')
+
+package() {
+    mkdir -p "${pkgdir}/opt/msys2-cross"
+}

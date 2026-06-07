@@ -1,0 +1,10 @@
+pkgname=mingw-w64-ucrt-x86_64-python-markdown
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy python-markdown — host tool, not cross-compiled"
+arch=('any')
+license=('MIT')
+
+package() {
+    mkdir -p "${pkgdir}/opt/msys2-cross"
+}

@@ -57,21 +57,10 @@ build_package() {
 }
 
 # Package in dependency order
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cross-binutils"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cross-headers"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cross-crt"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cross-winpthreads"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cross-gcc"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-autotools"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-cmake"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-ninja"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-meson"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-pkgconf"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-python-docutils"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gi-docgen"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gobject-introspection"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-egl-headers"
-build_package "${PKG_DIR}/mingw-w64-ucrt-x86_64-gles-headers"
+# Build all packages in the packages/ directory (toolchain + dummies)
+for pkgdir in "${PKG_DIR}"/mingw-w64-ucrt-x86_64-*/; do
+    build_package "${pkgdir%/}"
+done
 
 # Create repo database
 echo "==> Creating repo database..."
