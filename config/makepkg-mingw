@@ -57,6 +57,7 @@ sed -i \
 # Fix --build=${MINGW_CHOST} → --build=<linux-triple> (for explicit --build)
 sed -i \
     -e "s|--build=\${MINGW_CHOST}|--build=${BUILD_TRIPLE}|g" \
+    -e "s|--build=\"\${MINGW_CHOST}\"|--build=${BUILD_TRIPLE}|g" \
     -e "s|--build=\${CHOST}|--build=${BUILD_TRIPLE}|g" \
     PKGBUILD
 
