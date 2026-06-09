@@ -2,9 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-IMAGE_NAME="msys2-cross"
-VOL_SYSROOT="msys2-cross-sysroot"
-VOL_PACMAN="msys2-cross-pacman"
+BOOTSTRAP_IMAGE="msys2-cross"
+WORK_IMAGE="msys2-cross-work"
 MINGW_PACKAGES_DIR="${SCRIPT_DIR}/MINGW-packages"
 PACMAN_CONF="/opt/msys2-cross/config/pacman-mingw.conf"
 
@@ -24,19 +23,20 @@ usage() {
 Usage: msys2-cross <command> [args...]
 
 Commands:
-  setup [--force]       First-time setup: download sources, build container,
-                        clone MINGW-packages. --force rebuilds the container
+  setup [--force]       First-time setup: download sources, build bootstrap
+                        image, clone MINGW-packages. --force rebuilds
   build <pkg> [...]     Build one or more MINGW packages (builds missing deps)
-  install <pkg> [...]   Install built packages into the sysroot
+  install <pkg> [...]   Install built packages into the working image
   deps <pkg>            Show missing dependencies for a package
   shell [--network]     Open an interactive shell (--network enables network)
   run <cmd...>          Run an arbitrary command in the build environment
   list                  List installed packages in the sysroot
   list -u               List built but not installed packages
   list -a               List all packages known to cross-compile
-  reset                 Reset sysroot to image defaults (removes volumes)
-  destroy               Remove volumes, image, and built packages
-  rebuild               Rebuild the container image
+  diff                  Show files changed in the working image vs bootstrap
+  reset                 Remove working image (reset to bootstrap baseline)
+  destroy               Remove working image, bootstrap image, and built packages
+  rebuild               Rebuild the bootstrap image
 
 Package names can omit the "mingw-w64-" prefix:
   msys2-cross build libpng    →  builds mingw-w64-libpng
@@ -74,7 +74,6 @@ checkout_pkg() {
         git sparse-checkout add "${pkg}" 2>/dev/null
     fi
     if [[ ! -d "${pkg}" ]]; then
-        # Try stripping split-package suffixes
         for suffix in -runtime -tools -libs -devel -git; do
             local base="${pkg%${suffix}}"
             if [[ "$base" != "$pkg" ]]; then
@@ -91,26 +90,33 @@ checkout_pkg() {
     _checkout_actual="${pkg}"
 }
 
-# Ensure container image exists
+# Ensure bootstrap image exists
 ensure_image() {
-    if ! podman image exists "${IMAGE_NAME}"; then
-        err "Container image '${IMAGE_NAME}' not found. Run: msys2-cross setup"
+    if ! podman image exists "${BOOTSTRAP_IMAGE}"; then
+        err "Bootstrap image '${BOOTSTRAP_IMAGE}' not found. Run: msys2-cross setup"
         exit 1
     fi
 }
 
-# Run an ephemeral container with persistent sysroot/pacman volumes.
+# Return the current image to use (working if it exists, otherwise bootstrap)
+current_image() {
+    if podman image exists "${WORK_IMAGE}" 2>/dev/null; then
+        echo "${WORK_IMAGE}"
+    else
+        echo "${BOOTSTRAP_IMAGE}"
+    fi
+}
+
+# Run an ephemeral container against the current working image.
 prun() {
     ensure_image
     podman run --rm \
         --network=none \
-        -v "${VOL_SYSROOT}:/ucrt64" \
-        -v "${VOL_PACMAN}:/var/lib/pacman/mingw" \
         -v "${MINGW_PACKAGES_DIR}:/src" \
         -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
         -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
         -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
-        "${IMAGE_NAME}" "$@"
+        "$(current_image)" "$@"
 }
 
 # Fix ownership of files created by the container
@@ -122,7 +128,6 @@ fix_ownership() {
 }
 
 # Find missing MINGW deps for a package (direct only).
-# Single podman run call — fast. Returns source package names.
 find_missing_deps() {
     local pkg="$1"
 
@@ -170,7 +175,6 @@ find_all_missing_deps() {
         [[ -n "${checked_out[$pkg]+x}" ]] && continue
         checked_out[$pkg]=1
         checkout_pkg "$pkg" >/dev/null 2>&1 || continue
-        # Quick grep for potential deps to checkout (no need for accuracy)
         if [[ -f "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" ]]; then
             grep -oP '\$\{MINGW_PACKAGE_PREFIX\}-\K[a-z0-9_-]+' \
                 "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null | \
@@ -183,13 +187,11 @@ find_all_missing_deps() {
         fi
     done
 
-    # Now do the full recursive walk inside a single container run.
     prun bash -c "
         set +eu
         source /opt/msys2-cross/config/mingw-env.sh
         PACMAN_CONF=${PACMAN_CONF}
 
-        # Extract deps from a PKGBUILD, applying patches
         get_deps() {
             local srcpkg=\$1
             [[ -d /src/\$srcpkg ]] || return
@@ -212,7 +214,6 @@ find_all_missing_deps() {
             cd /
         }
 
-        # Recursive DFS
         declare -A visited=()
         result=()
 
@@ -229,7 +230,6 @@ find_all_missing_deps() {
                 resolve \"\$child\"
             done
 
-            # Check if THIS package is missing
             local ipkg=\"mingw-w64-ucrt-x86_64-\${srcpkg#mingw-w64-}\"
             if ! pacman --config \$PACMAN_CONF -Qq \"\$ipkg\" &>/dev/null; then
                 result+=(\"\$srcpkg\")
@@ -250,7 +250,7 @@ download_sources() {
     msg "Downloading sources for ${pkg}..."
     podman run --rm \
         -v "${MINGW_PACKAGES_DIR}/${pkg}:/pkg" \
-        "${IMAGE_NAME}" \
+        "${BOOTSTRAP_IMAGE}" \
         bash -c "
             source /opt/msys2-cross/config/mingw-env.sh
             useradd -m builduser 2>/dev/null || true
@@ -285,7 +285,7 @@ build_single() {
     return $rc
 }
 
-# Install a single package
+# Install packages and commit the result as the working image.
 install_single() {
     local pkg="$1"
 
@@ -298,10 +298,33 @@ install_single() {
     fi
 
     msg "Installing ${pkg}..."
+    local container="msys2-cross-install-$$"
+    local image
+    image="$(current_image)"
+
+    # Run install in a named container so we can commit afterwards
+    local install_cmds=""
     for f in $pkgfiles; do
         local fname="${f##*/}"
-        prun bash -c "pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /src/${pkg}/${fname}" 2>&1
+        install_cmds+="pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /src/${pkg}/${fname} && "
     done
+    install_cmds+="true"
+
+    podman run \
+        --name "${container}" \
+        --network=none \
+        -v "${MINGW_PACKAGES_DIR}:/src" \
+        -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
+        -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
+        -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
+        "${image}" bash -c "${install_cmds}" 2>&1
+    local rc=$?
+
+    if [[ $rc -eq 0 ]]; then
+        podman commit "${container}" "${WORK_IMAGE}" >/dev/null
+    fi
+    podman rm -f "${container}" >/dev/null 2>&1
+    return $rc
 }
 
 cmd_setup() {
@@ -323,16 +346,16 @@ cmd_setup() {
         msg "Sources already downloaded"
     fi
 
-    # Build container
+    # Build bootstrap image
     if [[ "$force" -eq 1 ]]; then
-        msg "Force-rebuilding container..."
-        podman volume rm -f "${VOL_SYSROOT}" "${VOL_PACMAN}" 2>/dev/null || true
-        TMPDIR=/var/tmp podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
-    elif podman image exists "${IMAGE_NAME}"; then
-        msg "Container image already exists (use --force to rebuild)"
+        msg "Force-rebuilding bootstrap image..."
+        podman rmi -f "${WORK_IMAGE}" 2>/dev/null || true
+        TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+    elif podman image exists "${BOOTSTRAP_IMAGE}"; then
+        msg "Bootstrap image already exists (use --force to rebuild)"
     else
-        msg "Building container (this takes 30-60 minutes)..."
-        TMPDIR=/var/tmp podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+        msg "Building bootstrap image (this takes 30-60 minutes)..."
+        TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
     fi
 
     # Clone MINGW-packages
@@ -481,20 +504,20 @@ cmd_shell() {
     done
 
     ensure_image
-    msg "Entering msys2-cross shell (network=${network})"
+    local image
+    image="$(current_image)"
+    msg "Entering msys2-cross shell (image=${image}, network=${network})"
     echo "  Sysroot:  /ucrt64"
     echo "  Packages: /src"
     echo "  Compiler: x86_64-w64-mingw32-gcc"
     echo ""
     podman run --rm -it \
         --network="${network}" \
-        -v "${VOL_SYSROOT}:/ucrt64" \
-        -v "${VOL_PACMAN}:/var/lib/pacman/mingw" \
         -v "${MINGW_PACKAGES_DIR}:/src" \
         -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
         -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
         -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
-        "${IMAGE_NAME}" bash
+        "${image}" bash
 }
 
 cmd_run() {
@@ -540,16 +563,32 @@ cmd_list() {
     esac
 }
 
+cmd_diff() {
+    ensure_image
+    if ! podman image exists "${WORK_IMAGE}" 2>/dev/null; then
+        msg "No working image — nothing changed from bootstrap"
+        return
+    fi
+    msg "Packages added to working image:"
+    local bootstrap_pkgs work_pkgs
+    bootstrap_pkgs=$(podman run --rm "${BOOTSTRAP_IMAGE}" pacman --config "${PACMAN_CONF}" -Q 2>/dev/null)
+    work_pkgs=$(podman run --rm "${WORK_IMAGE}" pacman --config "${PACMAN_CONF}" -Q 2>/dev/null)
+    diff <(echo "$bootstrap_pkgs") <(echo "$work_pkgs") | grep '^>' | sed 's/^> /  /' || true
+}
+
 cmd_reset() {
-    msg "Resetting sysroot (removing volumes)..."
-    podman volume rm -f "${VOL_SYSROOT}" "${VOL_PACMAN}" 2>/dev/null || true
-    msg "Volumes removed. Next run will re-initialize from the image."
+    if podman image exists "${WORK_IMAGE}" 2>/dev/null; then
+        podman rmi -f "${WORK_IMAGE}" >/dev/null
+        msg "Working image removed. Next run uses bootstrap baseline."
+    else
+        msg "No working image to reset"
+    fi
 }
 
 cmd_destroy() {
     msg "Destroying msys2-cross environment..."
-    podman volume rm -f "${VOL_SYSROOT}" "${VOL_PACMAN}" 2>/dev/null && msg "Removed volumes" || true
-    podman rmi -f "${IMAGE_NAME}" 2>/dev/null && msg "Removed image ${IMAGE_NAME}" || true
+    podman rmi -f "${WORK_IMAGE}" 2>/dev/null && msg "Removed working image" || true
+    podman rmi -f "${BOOTSTRAP_IMAGE}" 2>/dev/null && msg "Removed bootstrap image" || true
 
     # Clean built packages from MINGW-packages checkout
     local count
@@ -563,10 +602,10 @@ cmd_destroy() {
 }
 
 cmd_rebuild() {
-    msg "Rebuilding container image..."
-    podman volume rm -f "${VOL_SYSROOT}" "${VOL_PACMAN}" 2>/dev/null || true
-    TMPDIR=/var/tmp podman build -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
-    msg "Rebuild complete. Volumes will re-initialize on next run."
+    msg "Rebuilding bootstrap image..."
+    podman rmi -f "${WORK_IMAGE}" 2>/dev/null || true
+    TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+    msg "Rebuild complete."
 }
 
 # --- Main ---
@@ -582,6 +621,7 @@ case "$1" in
     shell)    shift; cmd_shell "$@" ;;
     run)      shift; cmd_run "$@" ;;
     list)     shift; cmd_list "$@" ;;
+    diff)     shift; cmd_diff "$@" ;;
     reset)    shift; cmd_reset "$@" ;;
     destroy)  shift; cmd_destroy "$@" ;;
     rebuild)  shift; cmd_rebuild "$@" ;;
