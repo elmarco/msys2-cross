@@ -297,15 +297,31 @@ install_single() {
         return 1
     fi
 
+    # Check if all packages are already installed (skip needless commits)
+    local to_install=()
+    for f in $pkgfiles; do
+        local fname="${f##*/}"
+        # Extract package name from filename (strip version-release-arch.pkg.tar.*)
+        local pname
+        pname=$(echo "$fname" | sed 's/-[0-9].*$//')
+        if prun pacman --config "${PACMAN_CONF}" -Qq "${pname}" &>/dev/null; then
+            warn "${pname} already installed, skipping"
+        else
+            to_install+=("$fname")
+        fi
+    done
+
+    if [[ ${#to_install[@]} -eq 0 ]]; then
+        return 0
+    fi
+
     msg "Installing ${pkg}..."
     local container="msys2-cross-install-$$"
     local image
     image="$(current_image)"
 
-    # Run install in a named container so we can commit afterwards
     local install_cmds=""
-    for f in $pkgfiles; do
-        local fname="${f##*/}"
+    for fname in "${to_install[@]}"; do
         install_cmds+="pacman --config ${PACMAN_CONF} -Udd --noconfirm --overwrite='*' /src/${pkg}/${fname} && "
     done
     install_cmds+="true"
@@ -569,11 +585,17 @@ cmd_diff() {
         msg "No working image — nothing changed from bootstrap"
         return
     fi
-    msg "Packages added to working image:"
+    msg "Changes in working image vs bootstrap:"
     local bootstrap_pkgs work_pkgs
     bootstrap_pkgs=$(podman run --rm "${BOOTSTRAP_IMAGE}" pacman --config "${PACMAN_CONF}" -Q 2>/dev/null)
     work_pkgs=$(podman run --rm "${WORK_IMAGE}" pacman --config "${PACMAN_CONF}" -Q 2>/dev/null)
-    diff <(echo "$bootstrap_pkgs") <(echo "$work_pkgs") | grep '^>' | sed 's/^> /  /' || true
+    local output
+    output=$(diff <(echo "$bootstrap_pkgs") <(echo "$work_pkgs") | grep '^[<>]' | sed -e 's/^> /  + /' -e 's/^< /  - /' || true)
+    if [[ -z "$output" ]]; then
+        echo "  (no package changes)"
+    else
+        echo "$output"
+    fi
 }
 
 cmd_reset() {
