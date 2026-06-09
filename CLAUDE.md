@@ -12,12 +12,12 @@ Build Windows (PE) binaries from Linux/Fedora by reusing the MSYS2 MINGW-package
 
 ## How it works
 
-A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from source on Fedora Linux, then `makepkg-mingw` is provided so MSYS2 MINGW-packages PKGBUILDs can be built on Linux without modification.
+A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from source on Fedora Linux, along with a Rust cross-compilation toolchain (std library compiled from source for `x86_64-pc-windows-gnu`). Then `makepkg-mingw` is provided so MSYS2 MINGW-packages PKGBUILDs can be built on Linux without modification.
 
 ## Project layout
 
 ```
-scripts/          Bootstrap stages (00-08), run sequentially in the Containerfile
+scripts/          Bootstrap stages (00-09), run sequentially in the Containerfile
 scripts/download-sources.sh  Pre-download all sources before container build
 config/           makepkg-mingw, makepkg_mingw.conf, pacman config, cmake/meson toolchain files
 wrappers/         mingw-cmake, mingw-meson, mingw-pkg-config, cygpath shim
@@ -44,6 +44,7 @@ Matched to MSYS2 MINGW-packages as of 2026-06-03 — update in `scripts/common.s
 - GCC 16.1.0
 - binutils 2.46
 - mingw-w64 14.0.0 (commit 93753750c)
+- Rust 1.96.0 (std built from source, uses Fedora's rustc as bootstrap)
 
 ## Building
 

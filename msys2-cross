@@ -37,6 +37,7 @@ Commands:
   reset                 Remove working image (reset to bootstrap baseline)
   destroy               Remove working image, bootstrap image, and built packages
   rebuild               Rebuild the bootstrap image
+  check-update           Check for version drift against upstream MSYS2
 
 Package names can omit the "mingw-w64-" prefix:
   msys2-cross build libpng    →  builds mingw-w64-libpng
@@ -253,9 +254,12 @@ download_sources() {
         "${BOOTSTRAP_IMAGE}" \
         bash -c "
             source /opt/msys2-cross/config/mingw-env.sh
+            cp -a /pkg /tmp/dl
+            cd /tmp/dl
             useradd -m builduser 2>/dev/null || true
-            chown -R builduser: /pkg
-            su builduser -s /bin/bash -c 'cd /pkg && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps -f'
+            chown -R builduser: /tmp/dl
+            su builduser -s /bin/bash -c 'cd /tmp/dl && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps -f'
+            cp -n /tmp/dl/*.tar.* /pkg/ 2>/dev/null || true
         "
     fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
 }
@@ -630,6 +634,105 @@ cmd_rebuild() {
     msg "Rebuild complete."
 }
 
+cmd_check_update() {
+    local github_raw="https://raw.githubusercontent.com/msys2/MINGW-packages/master"
+    local rc=0
+
+    # Extract pkgver from PKGBUILD text; checks _pkgver first (common alias),
+    # then falls back to pkgver=, resolving one level of variable reference.
+    _extract_pkgver() {
+        local text="$1"
+        local ver
+        # Many PKGBUILDs define _pkgver=X.Y.Z then pkgver=${_pkgver} (sometimes
+        # with parameter expansion).  Grab the raw _pkgver when it exists.
+        ver=$(echo "$text" | grep -m1 '^_pkgver=' | cut -d= -f2 | tr -d "'\"")
+        if [[ -z "$ver" ]]; then
+            ver=$(echo "$text" | grep -m1 '^pkgver=' | cut -d= -f2 | tr -d "'\"")
+            if [[ "$ver" =~ ^\$\{?([a-zA-Z_][a-zA-Z0-9_]*)\}?$ ]]; then
+                local varname="${BASH_REMATCH[1]}"
+                ver=$(echo "$text" | grep -m1 "^${varname}=" | cut -d= -f2 | tr -d "'\"")
+            fi
+        fi
+        echo "$ver"
+    }
+
+    _compare() {
+        local label="$1" local_ver="$2" upstream_ver="$3"
+        if [[ -z "$upstream_ver" ]]; then
+            printf "  ${YELLOW}??${NC}  %-14s %s ${YELLOW}(upstream unknown)${NC}\n" "$label" "$local_ver"
+        elif [[ "$local_ver" == "$upstream_ver" ]]; then
+            printf "  ${GREEN}OK${NC}  %-14s %s\n" "$label" "$local_ver"
+        else
+            printf "  ${YELLOW}!!${NC}  %-14s %s → %s\n" "$label" "$local_ver" "$upstream_ver"
+            rc=1
+        fi
+    }
+
+    msg "Checking upstream MSYS2 package versions..."
+
+    # --- Toolchain (pinned in scripts/common.sh) ---
+    echo ""
+    echo "Toolchain (pinned in scripts/common.sh):"
+
+    local local_gcc local_binutils local_mingw_commit local_rust
+    local_gcc=$(grep '^GCC_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
+    local_binutils=$(grep '^BINUTILS_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
+    local_mingw_commit=$(grep '^MINGW_W64_COMMIT=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
+    local_rust=$(grep '^RUST_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
+
+    local upstream_pkgbuild
+    for pair in "gcc:mingw-w64-gcc" "binutils:mingw-w64-binutils" "rust:mingw-w64-rust"; do
+        local name="${pair%%:*}" pkg="${pair#*:}"
+        local local_ver
+        case "$name" in
+            gcc)      local_ver="$local_gcc" ;;
+            binutils) local_ver="$local_binutils" ;;
+            rust)     local_ver="$local_rust" ;;
+        esac
+        upstream_pkgbuild=$(curl -fsSL "${github_raw}/${pkg}/PKGBUILD" 2>/dev/null) || true
+        _compare "$name" "$local_ver" "$(_extract_pkgver "$upstream_pkgbuild")"
+    done
+
+    # mingw-w64: commit-based comparison via mingw-w64-crt
+    local upstream_commit
+    upstream_pkgbuild=$(curl -fsSL "${github_raw}/mingw-w64-crt/PKGBUILD" 2>/dev/null) || true
+    upstream_commit=$(echo "$upstream_pkgbuild" | grep -m1 '^_commit=' | cut -d= -f2 | tr -d "'\"")
+    _compare "mingw-w64" "${local_mingw_commit:0:12}" "${upstream_commit:0:12}"
+
+    # --- Core libraries ---
+    local core_libs=(bzip2 zlib xz zstd libiconv gettext libffi pcre2 expat)
+    echo ""
+    echo "Core libraries (built in bootstrap):"
+
+    for lib in "${core_libs[@]}"; do
+        local pkg="mingw-w64-${lib}"
+        local local_ver=""
+        if [[ -f "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" ]]; then
+            local_ver=$(_extract_pkgver "$(cat "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD")")
+        fi
+
+        upstream_pkgbuild=$(curl -fsSL "${github_raw}/${pkg}/PKGBUILD" 2>/dev/null) || true
+        local upstream_ver
+        upstream_ver=$(_extract_pkgver "$upstream_pkgbuild")
+
+        if [[ -z "$local_ver" ]]; then
+            printf "  ${YELLOW}--${NC}  %-14s (not checked out, upstream=%s)\n" "$lib" "${upstream_ver:-?}"
+        else
+            _compare "$lib" "$local_ver" "$upstream_ver"
+        fi
+    done
+
+    echo ""
+    if [[ "$rc" -ne 0 ]]; then
+        warn "Version differences found — see above."
+        echo "  To update toolchain: edit scripts/common.sh, then ./msys2-cross rebuild"
+        echo "  To update core libs: cd MINGW-packages && git pull"
+    else
+        msg "All bootstrap versions match upstream MSYS2."
+    fi
+    return $rc
+}
+
 # --- Main ---
 if [[ $# -eq 0 ]]; then
     usage
@@ -646,7 +749,8 @@ case "$1" in
     diff)     shift; cmd_diff "$@" ;;
     reset)    shift; cmd_reset "$@" ;;
     destroy)  shift; cmd_destroy "$@" ;;
-    rebuild)  shift; cmd_rebuild "$@" ;;
+    rebuild)      shift; cmd_rebuild "$@" ;;
+    check-update) shift; cmd_check_update "$@" ;;
     help|-h|--help) usage 0 ;;
     *)        err "Unknown command: $1"; usage 1 ;;
 esac

@@ -23,6 +23,11 @@ dnf install -y \
     gtk-doc itstool \
     po4a nasm ragel \
     \
-    gtk-update-icon-cache
+    gtk-update-icon-cache \
+    \
+    rust cargo cargo-c
+
+# Symlink host-agnostic tools into MINGW_PREFIX so PKGBUILDs find them without Wine
+ln -sf /usr/bin/gtk-update-icon-cache /ucrt64/bin/gtk-update-icon-cache
 
 dnf clean all

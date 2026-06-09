@@ -1,0 +1,7 @@
+#!/bin/bash
+# Native pkg-config for meson build-time dependencies.
+# Resets PKG_CONFIG_LIBDIR to system paths so native lookups don't
+# find the cross /ucrt64 .pc files.
+export PKG_CONFIG_LIBDIR=/usr/lib64/pkgconfig:/usr/share/pkgconfig
+unset PKG_CONFIG_SYSROOT_DIR
+exec /usr/bin/pkg-config "$@"

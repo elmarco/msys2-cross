@@ -68,16 +68,31 @@ sed -i \
     PKGBUILD
 
 # Replace meson.exe / meson with our wrappers (setup vs compile/install)
+# Handle both ${MINGW_PREFIX}/bin/ and "${MINGW_PREFIX}"/bin/ quoting styles
 sed -i \
     -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} setup|/opt/msys2-cross/wrappers/mingw-meson|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\} setup|/opt/msys2-cross/wrappers/mingw-meson|g' \
     -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} compile|/usr/bin/meson compile|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\} compile|/usr/bin/meson compile|g' \
     -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} install|/usr/bin/meson install|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\} install|/usr/bin/meson install|g' \
     -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\}\b|/usr/bin/meson|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\}\b|/usr/bin/meson|g' \
     PKGBUILD
 
-# Replace cmake.exe with our wrapper
+# Handle bare meson calls (newer PKGBUILDs without ${MINGW_PREFIX}/bin/ prefix)
+sed -i \
+    -e '/\/meson/!s|^\(\s*\)meson setup\b|\1/opt/msys2-cross/wrappers/mingw-meson|' \
+    -e '/\/meson/!s|^\(\s*\)meson compile\b|\1/usr/bin/meson compile|' \
+    -e '/\/meson/!s|^\(\s*\)meson install\b|\1/usr/bin/meson install|' \
+    PKGBUILD
+
+# Replace cmake.exe with our wrapper (handles both quoting styles)
 sed -i \
     -e 's|${MINGW_PREFIX}/bin/cmake\.exe|/ucrt64/bin/cmake|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/cmake\.exe|/ucrt64/bin/cmake|g' \
+    -e 's|${MINGW_PREFIX}/bin/cmake\b|/ucrt64/bin/cmake|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/cmake\b|/ucrt64/bin/cmake|g' \
     PKGBUILD
 
 # Remove MSYS2_ARG_CONV_EXCL (MSYS2-only path conversion suppression).
@@ -86,6 +101,15 @@ sed -i \
 # Replace with nothing but preserve the command on the next line.
 sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" \\$//' PKGBUILD
 sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" //' PKGBUILD
+
+# Rewrite MINGW python exe references to host python
+sed -i \
+    -e 's|${MINGW_PREFIX}/bin/python3\(\.exe\)\{0,1\}|/usr/bin/python3|g' \
+    -e 's|${MINGW_PREFIX}/bin/python\(\.exe\)\{0,1\}|/usr/bin/python3|g' \
+    -e 's|-DPython3_EXECUTABLE=[^ ]*|-DPython3_EXECUTABLE=/usr/bin/python3|g' \
+    -e 's|-DPython_EXECUTABLE=[^ ]*|-DPython_EXECUTABLE=/usr/bin/python3|g' \
+    -e 's|-DPYTHON_EXECUTABLE=[^ ]*|-DPYTHON_EXECUTABLE=/usr/bin/python3|g' \
+    PKGBUILD
 
 # Remove noextract + manual tar (MSYS2 path workaround, not needed on Linux).
 # Replace tar lines with 'true' instead of deleting (preserves function body).
@@ -98,7 +122,7 @@ sed -i 's|^[[:space:]]*tar -xf.*\.tar.*|  true  # noextract tar removed|' PKGBUI
 if [[ "$(id -u)" == "0" ]]; then
     # makepkg refuses to run as root — drop to builduser
     useradd -m builduser 2>/dev/null || true
-    chown -R builduser: "$(pwd)"
+    chown -R builduser: "$(pwd)" /home/builduser 2>/dev/null || true
     su builduser -s /bin/bash -c "makepkg --config '${MAKEPKG_CONF}' --nodeps $*"
     _rc=$?
 else

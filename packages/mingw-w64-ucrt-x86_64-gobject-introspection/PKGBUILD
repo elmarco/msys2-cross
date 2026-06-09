@@ -1,5 +1,5 @@
 pkgname=mingw-w64-ucrt-x86_64-gobject-introspection
-pkgver=1.82.0
+pkgver=1.84.0
 pkgrel=1
 pkgdesc="Dummy gobject-introspection — provides pkg-config for cross-compilation"
 arch=('any')
@@ -9,8 +9,23 @@ package() {
     # Many packages require gobject-introspection-1.0.pc at configure time
     # even when introspection is disabled.
     mkdir -p "${pkgdir}/ucrt64/lib/pkgconfig"
+    # Stub GIR tools — meson checks they exist even with introspection=disabled
+    mkdir -p "${pkgdir}/ucrt64/bin"
+    for tool in g-ir-scanner g-ir-compiler g-ir-generate; do
+        printf '#!/bin/sh\nexit 0\n' > "${pkgdir}/ucrt64/bin/${tool}"
+        chmod +x "${pkgdir}/ucrt64/bin/${tool}"
+    done
+
+    mkdir -p "${pkgdir}/ucrt64/lib/pkgconfig"
     cat > "${pkgdir}/ucrt64/lib/pkgconfig/gobject-introspection-1.0.pc" << EOF
 prefix=/ucrt64
+libdir=\${prefix}/lib
+datadir=\${prefix}/share
+g_ir_scanner=\${prefix}/bin/g-ir-scanner
+g_ir_compiler=\${prefix}/bin/g-ir-compiler
+g_ir_generate=\${prefix}/bin/g-ir-generate
+girdir=\${datadir}/gir-1.0
+typelibdir=\${libdir}/girepository-1.0
 Name: gobject-introspection
 Description: dummy for cross-compilation
 Version: ${pkgver}

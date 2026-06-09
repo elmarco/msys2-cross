@@ -23,20 +23,28 @@ Instead of maintaining a separate set of cross-compilation recipes, this project
 ./msys2-cross shell
 ```
 
-The `msys2-cross` script manages a persistent container — installed packages
-survive across builds, so you can build dependency chains incrementally.
+The `msys2-cross` script manages a bootstrap image and a working image.
+Installed packages are committed to the working image, so dependency chains
+survive across builds.
 
 ### Available commands
 
 | Command | Description |
 |---|---|
-| `setup` | First-time setup: download sources, build container, clone MINGW-packages |
-| `build <pkg> [...]` | Build one or more packages |
+| `setup [--force]` | First-time setup: download sources, build container, clone MINGW-packages |
+| `build <pkg> [...]` | Build one or more packages (auto-builds missing dependencies) |
 | `install <pkg> [...]` | Install built packages into the sysroot |
-| `shell` | Interactive shell in the build container |
+| `deps <pkg>` | Show missing dependencies for a package |
+| `shell [--network]` | Interactive shell (`--network` enables network access) |
 | `run <cmd...>` | Run an arbitrary command in the container |
 | `list` | List installed packages |
-| `rebuild` | Rebuild the container image |
+| `list -u` | List built but not installed packages |
+| `list -a` | List all packages known to cross-compile |
+| `diff` | Show package changes in working image vs bootstrap |
+| `reset` | Remove working image (reset to bootstrap baseline) |
+| `destroy` | Remove all images and built packages |
+| `rebuild` | Rebuild the bootstrap image |
+| `check-update` | Check for version drift against upstream MSYS2 |
 
 Package names can omit the `mingw-w64-` prefix: `build libpng` works like `build mingw-w64-libpng`.
 
@@ -68,6 +76,7 @@ The container ships a complete cross-compilation toolchain:
 | GCC | 16.1.0 | Cross-compiler (`x86_64-w64-mingw32-gcc`) |
 | binutils | 2.46 | Cross-linker, assembler, etc. |
 | mingw-w64 | 14.0.0 | Windows headers and CRT (UCRT) |
+| Rust | 1.96.0 | Cross-compiled `std` for `x86_64-pc-windows-gnu` |
 | makepkg-mingw | — | Adapted MSYS2 build driver |
 | pacman | 7.x | Package manager for the MINGW sysroot |
 
@@ -126,25 +135,25 @@ Rules:
 
 ## Building dependency chains
 
-The `msys2-cross` script uses a persistent container, so installed packages
-survive across builds:
+The `build` command automatically resolves and builds missing transitive
+dependencies in topological order, installing each one before the next:
 
 ```sh
-# Build and install dependencies first
+# This will auto-build and install any missing deps for libwebp
+./msys2-cross build libwebp
+
+# You can also do it manually:
 ./msys2-cross build zlib
 ./msys2-cross install zlib
-
 ./msys2-cross build libpng
 ./msys2-cross install libpng
-
-# Now build something that needs both
 ./msys2-cross build libwebp
 ```
 
-To start fresh, remove the container:
+To start fresh, reset to the bootstrap baseline:
 
 ```sh
-podman rm -f msys2-cross-dev
+./msys2-cross reset
 ```
 
 ## Limitations
@@ -157,11 +166,13 @@ podman rm -f msys2-cross-dev
 ## Project structure
 
 ```
+msys2-cross                      CLI: setup, build, install, deps, shell, ...
 Containerfile                    Multi-stage container build
 scripts/
   download-sources.sh            Pre-download toolchain tarballs
   common.sh                      Version pins and shared variables
   00-install-host-deps.sh        Fedora packages (gcc, cmake, meson, ...)
+  00-install-extra-deps.sh       Additional host dependencies
   01-build-binutils.sh           Cross-binutils
   02-build-headers.sh            MinGW-w64 headers (Windows API + CRT)
   03-build-gcc-bootstrap.sh      Bootstrap GCC (C only, no CRT)
@@ -170,17 +181,20 @@ scripts/
   06-build-gcc-final.sh          Final GCC (C, C++, LTO)
   07-setup-pacman.sh             Package toolchain as pacman packages
   08-build-core-libs.sh          Build core MINGW libraries
+  09-build-rust-cross.sh         Rust cross-compilation toolchain
 config/
   makepkg-mingw                  Build driver (auto-rewrites + patches)
   makepkg_mingw.conf             makepkg config (cross-strip, compression)
   pacman-mingw.conf              pacman config (separate DB)
   cross-file.meson               Meson cross-compilation file
+  native-file.meson              Meson native file
   toolchain.cmake                CMake toolchain file
   mingw-env.sh                   Environment variables (MINGW_PREFIX, etc.)
 wrappers/
   mingw-cmake                    cmake wrapper (sets cross-compiler flags)
   mingw-meson                    meson wrapper (uses cross file)
   mingw-pkg-config               pkg-config wrapper (sysroot paths)
+  native-pkg-config              pkg-config wrapper for native builds
   cygpath                        No-op shim (MSYS2 path conversion)
 packages/                        Pacman PKGBUILDs for toolchain components
 patches/                         Per-package cross-compilation fixes
