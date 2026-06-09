@@ -14,11 +14,12 @@ mkdir -p "${CACHE_DIR}"
 
 download() {
     local url="$1"
-    local dest="${CACHE_DIR}/${url##*/}"
+    local filename="${2:-${url##*/}}"
+    local dest="${CACHE_DIR}/${filename}"
     if [[ -f "${dest}" ]]; then
-        echo "  Already cached: ${dest##*/}"
+        echo "  Already cached: ${filename}"
     else
-        echo "  Downloading: ${url##*/}"
+        echo "  Downloading: ${filename}"
         curl -fSL -o "${dest}" "$url"
     fi
 }
@@ -27,6 +28,9 @@ echo "==> Downloading toolchain sources..."
 download "${BINUTILS_URL}"
 download "${GCC_URL}"
 download "${MINGW_W64_URL}"
+
+echo "==> Downloading Rust source..."
+download "${RUST_SRC_URL}"
 
 echo "==> Downloading MINGW-packages sources..."
 

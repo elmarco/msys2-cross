@@ -53,6 +53,11 @@ RUN mkdir -p /usr/x86_64-w64-mingw32 /ucrt64/bin \
     && ln -sfn /opt/msys2-cross/wrappers/mingw-pkg-config /ucrt64/bin/x86_64-w64-mingw32-pkg-config \
     && ln -sfn /usr/bin/x86_64-w64-mingw32-gcc /ucrt64/bin/cc
 
+# Build Rust std library for x86_64-pc-windows-gnu from source
+COPY sources/rustc-*-src.tar.xz /build/sources/
+COPY scripts/09-build-rust-cross.sh /opt/msys2-cross/scripts/
+RUN bash /opt/msys2-cross/scripts/09-build-rust-cross.sh
+
 # Install build infrastructure
 COPY config/ /opt/msys2-cross/config/
 COPY wrappers/ /opt/msys2-cross/wrappers/
