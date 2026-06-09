@@ -110,7 +110,7 @@ current_image() {
 # Run an ephemeral container against the current working image.
 prun() {
     ensure_image
-    podman run --rm \
+    podman run --rm --init \
         --network=none \
         -v "${MINGW_PACKAGES_DIR}:/src" \
         -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
@@ -248,7 +248,7 @@ find_all_missing_deps() {
 download_sources() {
     local pkg="$1"
     msg "Downloading sources for ${pkg}..."
-    podman run --rm \
+    podman run --rm --init \
         -v "${MINGW_PACKAGES_DIR}/${pkg}:/pkg" \
         "${BOOTSTRAP_IMAGE}" \
         bash -c "
@@ -326,7 +326,7 @@ install_single() {
     done
     install_cmds+="true"
 
-    podman run \
+    podman run --init \
         --name "${container}" \
         --network=none \
         -v "${MINGW_PACKAGES_DIR}:/src" \
@@ -527,7 +527,7 @@ cmd_shell() {
     echo "  Packages: /src"
     echo "  Compiler: x86_64-w64-mingw32-gcc"
     echo ""
-    podman run --rm -it \
+    podman run --rm --init -it \
         --network="${network}" \
         -v "${MINGW_PACKAGES_DIR}:/src" \
         -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
