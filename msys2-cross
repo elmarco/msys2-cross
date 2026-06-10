@@ -7,6 +7,7 @@ WORK_IMAGE="msys2-cross-work"
 MINGW_PACKAGES_DIR="${SCRIPT_DIR}/MINGW-packages"
 PACMAN_CONF="/opt/msys2-cross/config/pacman-mingw.conf"
 LOG_DIR="${SCRIPT_DIR}/logs"
+DOWNLOAD_CONF="${SCRIPT_DIR}/config/makepkg-download.conf"
 
 # Colors
 RED='\033[0;31m'
@@ -18,6 +19,15 @@ NC='\033[0m'
 msg()  { echo -e "${GREEN}==>${NC} ${BOLD}$1${NC}"; }
 warn() { echo -e "${YELLOW}==> WARNING:${NC} ${BOLD}$1${NC}"; }
 err()  { echo -e "${RED}==> ERROR:${NC} ${BOLD}$1${NC}" >&2; }
+
+# Common bind mounts for all container runs
+VOLUMES=(
+    -v "${MINGW_PACKAGES_DIR}:/src"
+    -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro"
+    -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro"
+    -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro"
+    -v "${SCRIPT_DIR}/scripts:/opt/msys2-cross/scripts:ro"
+)
 
 usage() {
     cat <<'EOF'
@@ -66,9 +76,10 @@ ensure_mingw_packages() {
     fi
 }
 
-# Sparse checkout a package. Handles split packages by trying the
-# base name if the full name doesn't exist (e.g., mingw-w64-gettext-runtime
-# → mingw-w64-gettext).
+# Sparse checkout a package. Handles split packages by:
+# 1. Direct directory lookup
+# 2. Suffix stripping (e.g., mingw-w64-gettext-runtime → mingw-w64-gettext)
+# 3. Searching checked-out PKGBUILDs for pkgname=() that provides it
 checkout_pkg() {
     local pkg="$1"
     ensure_mingw_packages
@@ -77,6 +88,7 @@ checkout_pkg() {
         git sparse-checkout add "${pkg}" 2>/dev/null
     fi
     if [[ ! -d "${pkg}" ]]; then
+        # Try common split-package suffixes
         for suffix in -runtime -tools -libs -devel -git; do
             local base="${pkg%${suffix}}"
             if [[ "$base" != "$pkg" ]]; then
@@ -87,6 +99,15 @@ checkout_pkg() {
                 fi
             fi
         done
+        # Search checked-out PKGBUILDs for split packages that provide this name
+        local short="${pkg#mingw-w64-}"
+        local provider
+        provider=$(grep -l "pkgname=.*${short}" "${MINGW_PACKAGES_DIR}"/mingw-w64-*/PKGBUILD 2>/dev/null \
+            | head -1 | xargs -r dirname | xargs -r basename)
+        if [[ -n "$provider" && -d "${MINGW_PACKAGES_DIR}/${provider}" ]]; then
+            _checkout_actual="${provider}"
+            return 0
+        fi
         err "Package ${pkg} not found in MINGW-packages"
         return 1
     fi
@@ -111,54 +132,24 @@ current_image() {
 }
 
 # Run an ephemeral container against the current working image.
-# Pass --network as first arg to enable network access.
+# Flags: --network (enable network), --interactive (add -it)
 prun() {
     local network="none"
-    if [[ "${1:-}" == "--network" ]]; then
-        network="pasta"
-        shift
-    fi
+    local -a extra_args=()
+    while [[ "${1:-}" == --* ]]; do
+        case "$1" in
+            --network)     network="pasta"; shift ;;
+            --interactive) extra_args+=(-it); shift ;;
+            *) break ;;
+        esac
+    done
     ensure_image
     podman run --rm --init \
         --userns=keep-id \
         --network="${network}" \
-        -v "${MINGW_PACKAGES_DIR}:/src" \
-        -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
-        -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
-        -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
+        "${extra_args[@]}" \
+        "${VOLUMES[@]}" \
         "$(current_image)" "$@"
-}
-
-# Find missing MINGW deps for a package (direct only).
-find_missing_deps() {
-    local pkg="$1"
-
-    checkout_pkg "$pkg" >/dev/null 2>&1
-
-    prun bash -c "
-        set +eu
-        source /opt/msys2-cross/config/mingw-env.sh
-        PACMAN_CONF=${PACMAN_CONF}
-
-        tmpdir=\$(mktemp -d)
-        cp /src/${pkg}/PKGBUILD \"\$tmpdir/PKGBUILD\"
-        cd \"\$tmpdir\"
-
-        _patch=/opt/msys2-cross/patches/${pkg}.sh
-        [[ -f \"\$_patch\" ]] && source \"\$_patch\" 2>/dev/null
-
-        source PKGBUILD 2>/dev/null
-        for dep in \"\${depends[@]}\" \"\${makedepends[@]}\"; do
-            dep=\"\${dep%%[><=]*}\"
-            if [[ \"\$dep\" == mingw-w64-ucrt-x86_64-* ]]; then
-                pacman --config \$PACMAN_CONF -Qq \"\$dep\" &>/dev/null || {
-                    name=\"\${dep#mingw-w64-ucrt-x86_64-}\"
-                    echo \"mingw-w64-\$name\"
-                }
-            fi
-        done
-        rm -rf \"\$tmpdir\"
-    " 2>/dev/null | sort -u
 }
 
 # Recursively find all missing deps (transitive). Checkouts all needed
@@ -167,8 +158,7 @@ find_missing_deps() {
 find_all_missing_deps() {
     local root_pkg="$1"
 
-    # First, checkout all packages we might need by doing a breadth-first
-    # checkout on the host (fast git operations, no podman overhead).
+    # Breadth-first checkout on the host (fast git operations, no podman overhead)
     local -A checked_out=()
     local queue=("$root_pkg")
     while [[ ${#queue[@]} -gt 0 ]]; do
@@ -189,78 +179,13 @@ find_all_missing_deps() {
         fi
     done
 
-    prun bash -c "
-        set +eu
-        source /opt/msys2-cross/config/mingw-env.sh
-        PACMAN_CONF=${PACMAN_CONF}
-
-        get_deps() {
-            local srcpkg=\$1
-            [[ -d /src/\$srcpkg ]] || return
-
-            local tmpdir=\$(mktemp -d)
-            cp /src/\$srcpkg/PKGBUILD \"\$tmpdir/PKGBUILD\"
-            cd \"\$tmpdir\"
-
-            local _patch=/opt/msys2-cross/patches/\${srcpkg}.sh
-            [[ -f \"\$_patch\" ]] && source \"\$_patch\" 2>/dev/null
-
-            source PKGBUILD 2>/dev/null
-            for dep in \"\${depends[@]}\" \"\${makedepends[@]}\"; do
-                dep=\"\${dep%%[><=]*}\"
-                if [[ \"\$dep\" == mingw-w64-ucrt-x86_64-* ]]; then
-                    echo \"\$dep\"
-                fi
-            done
-            rm -rf \"\$tmpdir\"
-            cd /
-        }
-
-        declare -A visited=()
-        result=()
-
-        resolve() {
-            local srcpkg=\$1
-            [[ -n \"\${visited[\$srcpkg]+x}\" ]] && return
-            visited[\$srcpkg]=1
-
-            local deps=\$(get_deps \"\$srcpkg\" | sort -u)
-            for dep in \$deps; do
-                pacman --config \$PACMAN_CONF -Qq \"\$dep\" &>/dev/null && continue
-                local name=\"\${dep#mingw-w64-ucrt-x86_64-}\"
-                local child=\"mingw-w64-\$name\"
-                resolve \"\$child\"
-            done
-
-            local ipkg=\"mingw-w64-ucrt-x86_64-\${srcpkg#mingw-w64-}\"
-            if ! pacman --config \$PACMAN_CONF -Qq \"\$ipkg\" &>/dev/null; then
-                result+=(\"\$srcpkg\")
-            fi
-        }
-
-        resolve \"${root_pkg}\"
-
-        for p in \"\${result[@]}\"; do
-            echo \"\$p\"
-        done
-    " 2>/dev/null
+    prun bash /opt/msys2-cross/scripts/resolve-deps.sh "${root_pkg}" 2>/dev/null
 }
 
 # Download sources for a single package (runs on host, no container needed)
 download_sources() {
     local pkg="$1"
     msg "Downloading sources for ${pkg}..."
-    local _conf
-    _conf=$(mktemp)
-    cat > "$_conf" << 'CONF'
-PKGEXT=".pkg.tar.zst"
-SRCEXT=".src.tar.zst"
-CARCH="x86_64"
-DLAGENTS=('file::/usr/bin/curl -qgC - -o %o %u'
-          'ftp::/usr/bin/curl -qfC - --ftp-pasv --retry 3 --retry-delay 3 -o %o %u'
-          'http::/usr/bin/curl -qb "" -fLC - --retry 3 --retry-delay 3 -o %o %u'
-          'https::/usr/bin/curl -qb "" -fLC - --retry 3 --retry-delay 3 -o %o %u')
-CONF
     (
         export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
         export MINGW_PREFIX=/ucrt64
@@ -268,9 +193,8 @@ CONF
         export MSYSTEM=UCRT64
         cd "${MINGW_PACKAGES_DIR}/${pkg}"
         makepkg --verifysource --skippgpcheck \
-            --config "$_conf" --nodeps -f
+            --config "${DOWNLOAD_CONF}" --nodeps -f
     )
-    rm -f "$_conf"
 }
 
 cmd_download() {
@@ -337,7 +261,6 @@ install_single() {
     local to_install=()
     for f in $pkgfiles; do
         local fname="${f##*/}"
-        # Extract package name from filename (strip version-release-arch.pkg.tar.*)
         local pname
         pname=$(echo "$fname" | sed 's/-[0-9].*$//')
         if prun pacman --config "${PACMAN_CONF}" -Qq "${pname}" &>/dev/null; then
@@ -365,10 +288,7 @@ install_single() {
     podman run --init \
         --name "${container}" \
         --network=none \
-        -v "${MINGW_PACKAGES_DIR}:/src" \
-        -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
-        -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
-        -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
+        "${VOLUMES[@]}" \
         "${image}" bash -c "${install_cmds}" 2>&1
     local rc=$?
 
@@ -435,8 +355,7 @@ cmd_build() {
         exit 1
     fi
 
-    # Always force and skip checks for cross-compilation
-    makepkg_args+=("--skipchecksums" "--skippgpcheck" "--nocheck" "-sf")
+    makepkg_args+=("--skipchecksums" "-sf")
 
     ensure_mingw_packages
 
@@ -547,10 +466,10 @@ cmd_deps() {
 }
 
 cmd_shell() {
-    local network="none"
+    local prun_args=(--interactive)
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --network) network="pasta"; shift ;;
+            --network) prun_args+=(--network); shift ;;
             *) err "Unknown option: $1"; exit 1 ;;
         esac
     done
@@ -558,18 +477,12 @@ cmd_shell() {
     ensure_image
     local image
     image="$(current_image)"
-    msg "Entering msys2-cross shell (image=${image}, network=${network})"
+    msg "Entering msys2-cross shell (image=${image})"
     echo "  Sysroot:  /ucrt64"
     echo "  Packages: /src"
     echo "  Compiler: x86_64-w64-mingw32-gcc"
     echo ""
-    podman run --rm --init -it \
-        --network="${network}" \
-        -v "${MINGW_PACKAGES_DIR}:/src" \
-        -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
-        -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
-        -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
-        "${image}" bash
+    prun "${prun_args[@]}" bash
 }
 
 cmd_run() {
@@ -590,7 +503,6 @@ cmd_run() {
 cmd_list() {
     case "${1:-}" in
         -u)
-            # List built but not installed packages
             msg "Built packages not installed in sysroot:"
             local installed
             installed=$(prun pacman --config "${PACMAN_CONF}" -Q 2>/dev/null | awk '{print $1}')
@@ -604,7 +516,6 @@ cmd_list() {
             done
             ;;
         -a)
-            # List all available packages from MINGW-packages repo
             ensure_mingw_packages
             msg "Available packages in MINGW-packages:"
             cd "${MINGW_PACKAGES_DIR}"
@@ -655,7 +566,6 @@ cmd_destroy() {
     podman rmi -f "${WORK_IMAGE}" 2>/dev/null && msg "Removed working image" || true
     podman rmi -f "${BOOTSTRAP_IMAGE}" 2>/dev/null && msg "Removed bootstrap image" || true
 
-    # Clean built packages from MINGW-packages checkout
     local count
     count=$(find "${MINGW_PACKAGES_DIR}" -name "*.pkg.tar.*" 2>/dev/null | wc -l)
     if [[ "$count" -gt 0 ]]; then
@@ -677,13 +587,9 @@ cmd_check_update() {
     local github_raw="https://raw.githubusercontent.com/msys2/MINGW-packages/master"
     local rc=0
 
-    # Extract pkgver from PKGBUILD text; checks _pkgver first (common alias),
-    # then falls back to pkgver=, resolving one level of variable reference.
     _extract_pkgver() {
         local text="$1"
         local ver
-        # Many PKGBUILDs define _pkgver=X.Y.Z then pkgver=${_pkgver} (sometimes
-        # with parameter expansion).  Grab the raw _pkgver when it exists.
         ver=$(echo "$text" | grep -m1 '^_pkgver=' | cut -d= -f2 | tr -d "'\"")
         if [[ -z "$ver" ]]; then
             ver=$(echo "$text" | grep -m1 '^pkgver=' | cut -d= -f2 | tr -d "'\"")
@@ -709,7 +615,6 @@ cmd_check_update() {
 
     msg "Checking upstream MSYS2 package versions..."
 
-    # --- Toolchain (pinned in scripts/common.sh) ---
     echo ""
     echo "Toolchain (pinned in scripts/common.sh):"
 
@@ -732,13 +637,11 @@ cmd_check_update() {
         _compare "$name" "$local_ver" "$(_extract_pkgver "$upstream_pkgbuild")"
     done
 
-    # mingw-w64: commit-based comparison via mingw-w64-crt
     local upstream_commit
     upstream_pkgbuild=$(curl -fsSL "${github_raw}/mingw-w64-crt/PKGBUILD" 2>/dev/null) || true
     upstream_commit=$(echo "$upstream_pkgbuild" | grep -m1 '^_commit=' | cut -d= -f2 | tr -d "'\"")
     _compare "mingw-w64" "${local_mingw_commit:0:12}" "${upstream_commit:0:12}"
 
-    # --- Core libraries ---
     local core_libs=(bzip2 zlib xz zstd libiconv gettext libffi pcre2 expat)
     echo ""
     echo "Core libraries (built in bootstrap):"
