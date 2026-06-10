@@ -1,24 +1,26 @@
 #!/bin/bash
 set -euo pipefail
 
-# Smoke test: build mingw-w64-zlib using makepkg-mingw
-# Run inside the msys2-cross container.
+# Smoke test: build mingw-w64-zlib using makepkg-mingw.
+# Expects MINGW-packages bind-mounted at /src (the standard layout).
+# Run inside the msys2-cross container:
+#   podman run --rm -v ./MINGW-packages:/src msys2-cross bash /opt/msys2-cross/tests/test-zlib.sh
 
 echo "=== Test: Build mingw-w64-zlib ==="
+
+PKG=mingw-w64-zlib
+SRC_DIR="/src/${PKG}"
+
+if [[ ! -d "${SRC_DIR}" ]]; then
+    echo "FAIL: ${SRC_DIR} not found — bind-mount MINGW-packages at /src"
+    exit 1
+fi
 
 WORKDIR=$(mktemp -d)
 trap "rm -rf ${WORKDIR}" EXIT
 
-cd "${WORKDIR}"
-
-# Clone just the zlib package
-git clone --filter=blob:none --sparse \
-    https://github.com/msys2/MINGW-packages.git \
-    MINGW-packages
-
-cd MINGW-packages
-git sparse-checkout add mingw-w64-zlib
-cd mingw-w64-zlib
+cp -a "${SRC_DIR}" "${WORKDIR}/${PKG}"
+cd "${WORKDIR}/${PKG}"
 
 # Build it
 makepkg-mingw \

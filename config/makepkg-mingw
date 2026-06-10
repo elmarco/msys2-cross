@@ -62,10 +62,20 @@ sed -i \
     PKGBUILD
 
 # Fix CHOST=${MINGW_CHOST} ./configure pattern (zlib-style)
+# Handle both single-line and multi-line (backslash continuation) forms:
+#   CHOST=${MINGW_CHOST} ./configure ...
+#   CHOST=${MINGW_CHOST} \
+#   ../zlib-1.3.1/configure ...
 sed -i \
     -e 's|CHOST=\${MINGW_CHOST} \(\.\./[^ ]*/configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
     -e 's|CHOST=\${MINGW_CHOST} \(\./configure\)|CC=${MINGW_CHOST}-gcc \1 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|g' \
     PKGBUILD
+# Multi-line: CHOST=${MINGW_CHOST} \ (next line has configure)
+sed -i -e '/CHOST=\${MINGW_CHOST} *\\$/{
+    s|CHOST=\${MINGW_CHOST}|CC=${MINGW_CHOST}-gcc|
+    n
+    s|\([ ]*\)\(\.\{0,2\}/[^ ]*/configure\)|\1\2 --host=${MINGW_CHOST} --build='"${BUILD_TRIPLE}"'|
+}' PKGBUILD
 
 # Replace meson.exe / meson with our wrappers (setup vs compile/install)
 # Handle both ${MINGW_PREFIX}/bin/ and "${MINGW_PREFIX}"/bin/ quoting styles
@@ -116,6 +126,42 @@ sed -i \
 sed -i '/^noextract=/d' PKGBUILD
 sed -i 's|^[[:space:]]*tar -xf.*\.tar.*|  true  # noextract tar removed|' PKGBUILD
 
+# --- Validate rewrites ---
+# Warn when a PKGBUILD looks like it should have been rewritten but wasn't.
+# These are heuristic: a warning doesn't mean the build will fail, but it
+# flags cases where a sed pattern silently missed.
+_rewrite_warnings=0
+_warn_rewrite() { echo -e "\033[1;33m  -> WARNING:\033[0m $1"; _rewrite_warnings=$((_rewrite_warnings + 1)); }
+
+if grep -qP '^\s*(\.\./[^ ]*/)?\.?/configure\b' PKGBUILD; then
+    if ! grep -q -- '--host=' PKGBUILD; then
+        _warn_rewrite "PKGBUILD has ./configure but no --host= flag after rewrite"
+    fi
+    if grep -qP -- '--build=\$\{?MINGW_CHOST\}?' PKGBUILD; then
+        _warn_rewrite "PKGBUILD still has --build=\${MINGW_CHOST} after rewrite"
+    fi
+fi
+
+if grep -qP 'CHOST=\$\{?MINGW_CHOST\}?' PKGBUILD; then
+    _warn_rewrite "PKGBUILD still has CHOST=\${MINGW_CHOST} after rewrite"
+fi
+
+if grep -q 'MSYS2_ARG_CONV_EXCL' PKGBUILD; then
+    _warn_rewrite "PKGBUILD still has MSYS2_ARG_CONV_EXCL after rewrite"
+fi
+
+if grep -qP '\$\{MINGW_PREFIX\}["/]*bin/meson\b' PKGBUILD; then
+    _warn_rewrite "PKGBUILD still references \${MINGW_PREFIX}/bin/meson after rewrite"
+fi
+
+if grep -qP '\$\{MINGW_PREFIX\}["/]*bin/cmake\b' PKGBUILD; then
+    _warn_rewrite "PKGBUILD still references \${MINGW_PREFIX}/bin/cmake after rewrite"
+fi
+
+if [[ $_rewrite_warnings -gt 0 ]]; then
+    echo -e "\033[1;33m==> WARNING:\033[0m ${_rewrite_warnings} rewrite warning(s) — build may fail or produce native binaries"
+fi
+
 # --- Build ---
 # --nodeps: skip MSYS-layer dependency checks (autoconf, python, etc.)
 #           which don't exist in our pacman DB.
@@ -123,10 +169,10 @@ if [[ "$(id -u)" == "0" ]]; then
     # makepkg refuses to run as root — drop to builduser
     useradd -m builduser 2>/dev/null || true
     chown -R builduser: "$(pwd)" /home/builduser 2>/dev/null || true
-    su builduser -s /bin/bash -c "makepkg --config '${MAKEPKG_CONF}' --nodeps $*"
+    su builduser -s /bin/bash -c "makepkg --config '${MAKEPKG_CONF}' --nodeps --skippgpcheck $*"
     _rc=$?
 else
-    makepkg --config "${MAKEPKG_CONF}" --nodeps "$@"
+    makepkg --config "${MAKEPKG_CONF}" --nodeps --skippgpcheck "$@"
     _rc=$?
 fi
 

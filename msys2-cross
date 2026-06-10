@@ -6,6 +6,7 @@ BOOTSTRAP_IMAGE="msys2-cross"
 WORK_IMAGE="msys2-cross-work"
 MINGW_PACKAGES_DIR="${SCRIPT_DIR}/MINGW-packages"
 PACMAN_CONF="/opt/msys2-cross/config/pacman-mingw.conf"
+LOG_DIR="${SCRIPT_DIR}/logs"
 
 # Colors
 RED='\033[0;31m'
@@ -25,11 +26,12 @@ Usage: msys2-cross <command> [args...]
 Commands:
   setup [--force]       First-time setup: download sources, build bootstrap
                         image, clone MINGW-packages. --force rebuilds
+  download <pkg> [...]  Download sources for packages (runs on host)
   build <pkg> [...]     Build one or more MINGW packages (builds missing deps)
   install <pkg> [...]   Install built packages into the working image
   deps <pkg>            Show missing dependencies for a package
   shell [--network]     Open an interactive shell (--network enables network)
-  run <cmd...>          Run an arbitrary command in the build environment
+  run [--network] <cmd...>  Run a command in the build environment
   list                  List installed packages in the sysroot
   list -u               List built but not installed packages
   list -a               List all packages known to cross-compile
@@ -109,23 +111,22 @@ current_image() {
 }
 
 # Run an ephemeral container against the current working image.
+# Pass --network as first arg to enable network access.
 prun() {
+    local network="none"
+    if [[ "${1:-}" == "--network" ]]; then
+        network="pasta"
+        shift
+    fi
     ensure_image
     podman run --rm --init \
-        --network=none \
+        --userns=keep-id \
+        --network="${network}" \
         -v "${MINGW_PACKAGES_DIR}:/src" \
         -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro" \
         -v "${SCRIPT_DIR}/config:/opt/msys2-cross/config:ro" \
         -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro" \
         "$(current_image)" "$@"
-}
-
-# Fix ownership of files created by the container
-fix_ownership() {
-    local dir="$1"
-    if [[ -d "$dir" ]]; then
-        podman unshare chown -R "$(id -u):$(id -g)" "$dir" 2>/dev/null || true
-    fi
 }
 
 # Find missing MINGW deps for a package (direct only).
@@ -245,23 +246,47 @@ find_all_missing_deps() {
     " 2>/dev/null
 }
 
-# Download sources for a single package
+# Download sources for a single package (runs on host, no container needed)
 download_sources() {
     local pkg="$1"
     msg "Downloading sources for ${pkg}..."
-    podman run --rm --init \
-        -v "${MINGW_PACKAGES_DIR}/${pkg}:/pkg" \
-        "${BOOTSTRAP_IMAGE}" \
-        bash -c "
-            source /opt/msys2-cross/config/mingw-env.sh
-            cp -a /pkg /tmp/dl
-            cd /tmp/dl
-            useradd -m builduser 2>/dev/null || true
-            chown -R builduser: /tmp/dl
-            su builduser -s /bin/bash -c 'cd /tmp/dl && makepkg --verifysource --skipchecksums --skippgpcheck --config /opt/msys2-cross/config/makepkg_mingw.conf --nodeps -f'
-            cp -n /tmp/dl/*.tar.* /pkg/ 2>/dev/null || true
-        "
-    fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+    local _conf
+    _conf=$(mktemp)
+    cat > "$_conf" << 'CONF'
+PKGEXT=".pkg.tar.zst"
+SRCEXT=".src.tar.zst"
+CARCH="x86_64"
+DLAGENTS=('file::/usr/bin/curl -qgC - -o %o %u'
+          'ftp::/usr/bin/curl -qfC - --ftp-pasv --retry 3 --retry-delay 3 -o %o %u'
+          'http::/usr/bin/curl -qb "" -fLC - --retry 3 --retry-delay 3 -o %o %u'
+          'https::/usr/bin/curl -qb "" -fLC - --retry 3 --retry-delay 3 -o %o %u')
+CONF
+    (
+        export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
+        export MINGW_PREFIX=/ucrt64
+        export MINGW_CHOST=x86_64-w64-mingw32
+        export MSYSTEM=UCRT64
+        cd "${MINGW_PACKAGES_DIR}/${pkg}"
+        makepkg --verifysource --skippgpcheck \
+            --config "$_conf" --nodeps -f
+    )
+    rm -f "$_conf"
+}
+
+cmd_download() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross download <pkg> [...]"
+        exit 1
+    fi
+
+    ensure_mingw_packages
+
+    for raw_pkg in "$@"; do
+        local pkg
+        pkg=$(normalize_pkg "$raw_pkg")
+        checkout_pkg "$pkg"
+        download_sources "$pkg"
+    done
 }
 
 # Build a single package (no dep resolution)
@@ -273,7 +298,11 @@ build_single() {
     checkout_pkg "$pkg"
     download_sources "$pkg"
 
+    mkdir -p "${LOG_DIR}"
+    local logfile="${LOG_DIR}/${pkg}_$(date +%Y%m%d-%H%M%S).log"
+
     msg "Building ${pkg}..."
+    msg "Log: ${logfile}"
     prun bash -c "
         rm -rf /tmp/build/${pkg}
         mkdir -p /tmp/build
@@ -283,9 +312,12 @@ build_single() {
         _rc=\$?
         cp -f /tmp/build/${pkg}/*.pkg.tar.* /src/${pkg}/ 2>/dev/null || true
         exit \$_rc
-    "
-    local rc=$?
-    fix_ownership "${MINGW_PACKAGES_DIR}/${pkg}"
+    " 2>&1 | tee "${logfile}"
+    local rc=${PIPESTATUS[0]}
+
+    if [[ $rc -ne 0 ]]; then
+        err "Build failed for ${pkg} — full log: ${logfile}"
+    fi
     return $rc
 }
 
@@ -541,11 +573,18 @@ cmd_shell() {
 }
 
 cmd_run() {
+    local prun_args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --network) prun_args+=("--network"); shift ;;
+            *) break ;;
+        esac
+    done
     if [[ $# -eq 0 ]]; then
-        err "Usage: msys2-cross run <command...>"
+        err "Usage: msys2-cross run [--network] <command...>"
         exit 1
     fi
-    prun "$@"
+    prun "${prun_args[@]}" bash -c "$*"
 }
 
 cmd_list() {
@@ -740,6 +779,7 @@ fi
 
 case "$1" in
     setup)    shift; cmd_setup "$@" ;;
+    download) shift; cmd_download "$@" ;;
     build)    shift; cmd_build "$@" ;;
     install)  shift; cmd_install "$@" ;;
     deps)     shift; cmd_deps "$@" ;;

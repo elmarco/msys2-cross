@@ -54,15 +54,15 @@ build_and_install() {
         chown -R builduser: "${_pkgdir}" "${REPO_DIR}"
         su builduser -s /bin/bash -c "cd '${_pkgdir}' && '${MAKEPKG_MINGW}' --skipchecksums --skippgpcheck --nocheck --force" \
             2>&1 || {
-                echo "WARNING: Failed to build ${pkg}, continuing..."
-                return 0
+                echo "==> ERROR: Failed to build ${pkg}"
+                exit 1
             }
     else
         cd "${_pkgdir}"
         "${MAKEPKG_MINGW}" --skipchecksums --skippgpcheck --nocheck --force \
             2>&1 || {
-                echo "WARNING: Failed to build ${pkg}, continuing..."
-                return 0
+                echo "==> ERROR: Failed to build ${pkg}"
+                exit 1
             }
     fi
 
@@ -74,7 +74,8 @@ build_and_install() {
         if [[ -f "${pkgfile}" ]]; then
             echo "==> Installing ${pkgfile##*/}"
             pacman --config "${PACMAN_CONF}" -U --noconfirm --overwrite='*' "${pkgfile}" || {
-                echo "WARNING: Failed to install ${pkgfile##*/}"
+                echo "==> ERROR: Failed to install ${pkgfile##*/}"
+                exit 1
             }
         fi
     done
@@ -88,9 +89,9 @@ done
 # Individual installs above may fail on dep ordering (e.g., xz needs
 # gettext-runtime which is a split package from gettext). A single
 # pacman -U with all packages resolves inter-dependencies correctly.
-repo-add "${REPO_DIR}/msys2-cross.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.* 2>/dev/null || true
+repo-add "${REPO_DIR}/msys2-cross.db.tar.zst" "${REPO_DIR}"/*.pkg.tar.*
 echo "==> Installing all built packages..."
-pacman --config "${PACMAN_CONF}" -Udd --noconfirm --overwrite='*' "${REPO_DIR}"/*.pkg.tar.* || true
+pacman --config "${PACMAN_CONF}" -Udd --noconfirm --overwrite='*' "${REPO_DIR}"/*.pkg.tar.*
 
 echo ""
 echo "========================================="
