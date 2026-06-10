@@ -4,7 +4,7 @@ set -euo pipefail
 # Version pins — matched to MSYS2 MINGW-packages as of 2026-06-03
 GCC_VERSION=16.1.0
 BINUTILS_VERSION=2.46
-MINGW_W64_COMMIT=93753750c96c8a36a1db2e1b30753f6e9e7aba28
+MINGW_W64_COMMIT=818fa65100f7
 MINGW_W64_VERSION=14.0.0
 
 # Target triple

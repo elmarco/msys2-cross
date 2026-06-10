@@ -1,0 +1,10 @@
+pkgname=mingw-w64-ucrt-x86_64-gtk-update-icon-cache
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy gtk-update-icon-cache — native Fedora tool symlinked into /ucrt64/bin"
+arch=('any')
+license=('MIT')
+
+package() {
+    mkdir -p "${pkgdir}/opt/msys2-cross"
+}
