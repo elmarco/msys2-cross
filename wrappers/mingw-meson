@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Meson wrapper for UCRT64 cross-compilation.
 #
 # Called two ways:

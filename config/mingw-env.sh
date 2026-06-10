@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Environment variables for the UCRT64 cross-compilation environment.
 # Sourced by makepkg-mingw and available to users interactively.
 #

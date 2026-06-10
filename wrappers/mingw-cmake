@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # CMake wrapper for UCRT64 cross-compilation.
 # Replaces MSYS2's mingw-w64-ucrt-x86_64-cmake wrapper.
 #

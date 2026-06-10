@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # pkg-config wrapper for UCRT64 cross-compilation.
 export PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
 export PKG_CONFIG_SYSROOT_DIR="/ucrt64"

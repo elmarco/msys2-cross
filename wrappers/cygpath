@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # No-op cygpath shim for Linux.
 # On MSYS2, cygpath converts between Windows and POSIX paths.
 # On Linux, paths are already POSIX, so return input unchanged.

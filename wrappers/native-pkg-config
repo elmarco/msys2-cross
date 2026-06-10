@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Native pkg-config for meson build-time dependencies.
 # Resets PKG_CONFIG_LIBDIR to system paths so native lookups don't
 # find the cross /ucrt64 .pc files.
