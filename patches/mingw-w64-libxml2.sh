@@ -1,6 +1,6 @@
 # WHY: Quoted --build= not caught by generic rewrite; Windows Python unavailable; xsltproc missing for docs
 # --build="${MINGW_CHOST}" (with quotes) isn't caught by the generic sed
-sed -i 's|--build="${MINGW_CHOST}"|--build=x86_64-redhat-linux|g' PKGBUILD
+sed -i "s|--build=\"\${MINGW_CHOST}\"|--build=$(gcc -dumpmachine)|g" PKGBUILD
 # Disable python in shared build (Windows python not available)
 sed -i 's|--with-python|--without-python|g' PKGBUILD
 # Remove python compileall in package() — no python bindings installed

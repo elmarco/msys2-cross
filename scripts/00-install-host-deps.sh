@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Minimal deps for building the cross-toolchain (stages 01-06).
 # Changes here invalidate the toolchain cache — keep this stable.
+# Uses dnf intentionally — the Containerfile pins Fedora as the base image.
 dnf install -y \
     --setopt=install_weak_deps=False \
     --setopt=keepcache=False \

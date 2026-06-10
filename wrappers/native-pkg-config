@@ -3,6 +3,7 @@ set -euo pipefail
 # Native pkg-config for meson build-time dependencies.
 # Resets PKG_CONFIG_LIBDIR to system paths so native lookups don't
 # find the cross /ucrt64 .pc files.
-export PKG_CONFIG_LIBDIR=/usr/lib64/pkgconfig:/usr/share/pkgconfig
+_libdir=$(/usr/bin/pkg-config --variable=pc_path pkg-config 2>/dev/null | cut -d: -f1)
+export PKG_CONFIG_LIBDIR="${_libdir:-/usr/lib/pkgconfig}:/usr/share/pkgconfig"
 unset PKG_CONFIG_SYSROOT_DIR
 exec /usr/bin/pkg-config "$@"
