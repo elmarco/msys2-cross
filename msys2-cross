@@ -293,6 +293,7 @@ install_single() {
     podman run --init \
         --name "${container}" \
         --network=none \
+        --user root \
         "${VOLUMES[@]}" \
         "${image}" bash -c "${install_cmds}" 2>&1
     local rc=$?
