@@ -17,6 +17,19 @@ if [[ "$(id -u)" == "0" ]]; then
     chown -R builduser: "${PKG_DIR}"
 fi
 
+# Container overlay filesystems don't support xattrs. Wrap bsdtar so
+# repo-add and pacman extraction don't fail on "Cannot restore extended
+# attributes". Only inject flags in extraction (-x) mode.
+install -m755 /dev/stdin /usr/local/bin/bsdtar <<'WRAPPER'
+#!/bin/bash
+for arg in "$@"; do
+    case "$arg" in
+        -x*|--extract) exec /usr/bin/bsdtar --no-xattrs --no-fflags "$@" ;;
+    esac
+done
+exec /usr/bin/bsdtar "$@"
+WRAPPER
+
 # Create pacman directories
 mkdir -p /var/lib/pacman/mingw
 mkdir -p /var/cache/pacman/mingw/pkg
