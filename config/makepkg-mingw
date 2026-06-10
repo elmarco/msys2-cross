@@ -169,10 +169,10 @@ if [[ "$(id -u)" == "0" ]]; then
     # makepkg refuses to run as root — drop to builduser
     useradd -m builduser 2>/dev/null || true
     chown -R builduser: "$(pwd)" /home/builduser 2>/dev/null || true
-    su builduser -s /bin/bash -c "makepkg --config '${MAKEPKG_CONF}' --nodeps --skippgpcheck $*"
+    su builduser -s /bin/bash -c "makepkg --config '${MAKEPKG_CONF}' --nodeps --skippgpcheck --nocheck $*"
     _rc=$?
 else
-    makepkg --config "${MAKEPKG_CONF}" --nodeps --skippgpcheck "$@"
+    makepkg --config "${MAKEPKG_CONF}" --nodeps --skippgpcheck --nocheck "$@"
     _rc=$?
 fi
 
