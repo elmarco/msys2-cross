@@ -208,8 +208,8 @@ msys2-cross/
     04-build-crt.sh
     05-build-winpthreads.sh
     06-build-gcc-final.sh
-    07-setup-pacman.sh
-    08-build-core-libs.sh
+    07-build-rust-cross.sh
+    08-setup-pacman.sh
   config/
     makepkg-mingw                      # Linux-adapted orchestrator script
     makepkg_mingw.conf                 # makepkg config for cross-compilation

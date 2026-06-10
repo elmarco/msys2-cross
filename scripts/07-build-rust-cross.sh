@@ -86,21 +86,6 @@ if ! ls "${DEST}"/libstd-*.rlib &>/dev/null; then
 fi
 echo "==> Installed ${TOTAL_INSTALLED} rlib files to ${DEST}"
 
-# Configure Cargo for cross-compilation.
-# The host linker must be set explicitly because /ucrt64/bin/cc (cross-compiler)
-# shadows the system cc in PATH, breaking build script compilation.
-for home_dir in /root /home/builduser; do
-    mkdir -p "${home_dir}/.cargo" 2>/dev/null || true
-    cat > "${home_dir}/.cargo/config.toml" << EOF
-[target.x86_64-unknown-linux-gnu]
-linker = "gcc"
-
-[target.${RUST_TARGET}]
-linker = "${TARGET}-gcc"
-ar = "${TARGET}-ar"
-EOF
-done
-
 # Verify cross-compilation works
 echo "==> Verifying Rust cross-compilation..."
 TMPDIR=$(mktemp -d)

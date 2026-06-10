@@ -25,7 +25,7 @@ dnf install -y \
     \
     gtk-update-icon-cache \
     \
-    rust cargo cargo-c
+    cargo-c
 
 # Symlink host-agnostic tools into MINGW_PREFIX so PKGBUILDs find them without Wine
 mkdir -p /ucrt64/bin

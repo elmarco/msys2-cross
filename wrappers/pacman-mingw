@@ -1,0 +1,2 @@
+#!/bin/bash
+exec pacman --config /opt/msys2-cross/config/pacman-mingw.conf "$@"

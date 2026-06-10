@@ -80,9 +80,6 @@ The container ships a complete cross-compilation toolchain:
 | makepkg-mingw | — | Adapted MSYS2 build driver |
 | pacman | 7.x | Package manager for the MINGW sysroot |
 
-Pre-built core libraries in `/ucrt64/`:
-bzip2, zlib, xz, zstd, libiconv, gettext (libintl), libffi, pcre2, expat
-
 ## How it works
 
 MSYS2's build model is already quasi-cross-compilation: a POSIX shell drives compilers targeting native Windows. This project swaps the POSIX host from MSYS2 (Windows + Cygwin layer) to Linux:
@@ -179,9 +176,8 @@ scripts/
   04-build-crt.sh                MinGW-w64 CRT (UCRT)
   05-build-winpthreads.sh        POSIX threads for Windows
   06-build-gcc-final.sh          Final GCC (C, C++, LTO)
-  07-setup-pacman.sh             Package toolchain as pacman packages
-  08-build-core-libs.sh          Build core MINGW libraries
-  09-build-rust-cross.sh         Rust cross-compilation toolchain
+  07-build-rust-cross.sh         Rust cross-compilation toolchain
+  08-setup-pacman.sh             Package toolchain as pacman packages
 config/
   makepkg-mingw                  Build driver (auto-rewrites + patches)
   makepkg_mingw.conf             makepkg config (cross-strip, compression)

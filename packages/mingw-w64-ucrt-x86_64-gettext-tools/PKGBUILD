@@ -1,0 +1,11 @@
+pkgname=mingw-w64-ucrt-x86_64-gettext-tools
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy gettext-tools package — native Fedora gettext satisfy this dependency"
+arch=('any')
+url="https://www.gnu.org/software/gettext/"
+license=('GPL')
+
+package() {
+    mkdir -p "${pkgdir}/opt/msys2-cross"
+}

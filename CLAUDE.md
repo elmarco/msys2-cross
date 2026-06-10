@@ -6,7 +6,7 @@ Build Windows (PE) binaries from Linux/Fedora by reusing the MSYS2 MINGW-package
 
 ## Design principles
 
-- **Offline builds**: The container must not require network access at runtime. All sources (toolchain tarballs, MINGW-packages) are pre-downloaded on the host and bind-mounted or copied in. Run `scripts/download-sources.sh` before `podman build`.
+- **Offline builds**: The container must not require network access at runtime. All sources (toolchain tarballs) are pre-downloaded on the host. Run `scripts/download-sources.sh` before `podman build`.
 - **No PKGBUILD modifications on disk**: `makepkg-mingw` works on a copy of PKGBUILD (`cp PKGBUILD PKGBUILD.orig`, restore after build). Patches must not corrupt the original. Use `sed` replacements that preserve array structure — never delete lines from the middle of bash arrays.
 - **Bind-mount workflow**: Users clone MINGW-packages on the host and mount into the container. The container should never clone repos itself.
 
@@ -17,7 +17,7 @@ A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from sourc
 ## Project layout
 
 ```
-scripts/          Bootstrap stages (00-09), run sequentially in the Containerfile
+scripts/          Bootstrap stages (00-08), run sequentially in the Containerfile
 scripts/download-sources.sh  Pre-download all sources before container build
 config/           makepkg-mingw, makepkg_mingw.conf, pacman config, cmake/meson toolchain files
 wrappers/         mingw-cmake, mingw-meson, mingw-pkg-config, cygpath shim
@@ -35,7 +35,7 @@ Containerfile     Multi-stage: toolchain-builder → msys2-cross
 - **Cross-compiler in /usr/bin/**: Standard `x86_64-w64-mingw32-gcc` naming
 - **Symlinks /usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}**: GCC sysroot discovery (can't replace the dir since binutils creates `/usr/x86_64-w64-mingw32/bin/`)
 - **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf
-- **--nodeps in makepkg-mingw**: Skips MSYS-layer dependency checks (autoconf, python, etc.) since those are native Fedora packages
+- **Dummy packages for host-provided tools**: Build tools (autotools, meson, cmake, python, etc.) are provided by Fedora, not cross-compiled. Dummy pacman packages satisfy these MINGW dependencies. `makepkg_mingw.conf` sets `PACMAN` to a wrapper that checks the mingw pacman DB
 - **Wine is optional**: Only needed for ~5-10% of packages that run .exe at build time
 
 ## Version pins

@@ -22,7 +22,8 @@ RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh \
     && bash /opt/msys2-cross/scripts/03-build-gcc-bootstrap.sh \
     && bash /opt/msys2-cross/scripts/04-build-crt.sh \
     && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
-    && bash /opt/msys2-cross/scripts/06-build-gcc-final.sh \
+    && bash /opt/msys2-cross/scripts/06-build-gcc-final.sh
+RUN bash /opt/msys2-cross/scripts/07-build-rust-cross.sh \
     && rm -rf /build
 
 # ===========================================================================
@@ -35,12 +36,13 @@ COPY scripts/common.sh scripts/00-install-host-deps.sh scripts/00-install-extra-
 RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh
 RUN bash /opt/msys2-cross/scripts/00-install-extra-deps.sh
 
-# Copy cross-toolchain from builder stage
+# Copy cross-toolchain from builder stage (GCC + Rust std)
 COPY --from=toolchain-builder /ucrt64 /ucrt64
 COPY --from=toolchain-builder /usr/bin/x86_64-w64-mingw32-* /usr/bin/
 COPY --from=toolchain-builder /usr/x86_64-w64-mingw32 /usr/x86_64-w64-mingw32
 COPY --from=toolchain-builder /usr/lib64/gcc/x86_64-w64-mingw32 /usr/lib64/gcc/x86_64-w64-mingw32
 COPY --from=toolchain-builder /usr/libexec/gcc/x86_64-w64-mingw32 /usr/libexec/gcc/x86_64-w64-mingw32
+COPY --from=toolchain-builder /usr/lib/rustlib/x86_64-pc-windows-gnu /usr/lib/rustlib/x86_64-pc-windows-gnu
 
 # Recreate sysroot symlinks (include/lib point into /ucrt64)
 # Also add build tool wrappers where PKGBUILDs expect them
@@ -53,11 +55,6 @@ RUN mkdir -p /usr/x86_64-w64-mingw32 /ucrt64/bin \
     && ln -sfn /opt/msys2-cross/wrappers/mingw-pkg-config /ucrt64/bin/x86_64-w64-mingw32-pkg-config \
     && ln -sfn /usr/bin/x86_64-w64-mingw32-gcc /ucrt64/bin/cc
 
-# Build Rust std library for x86_64-pc-windows-gnu from source
-COPY sources/rustc-*-src.tar.xz /build/sources/
-COPY scripts/09-build-rust-cross.sh /opt/msys2-cross/scripts/
-RUN bash /opt/msys2-cross/scripts/09-build-rust-cross.sh
-
 # Install build infrastructure
 COPY config/ /opt/msys2-cross/config/
 COPY wrappers/ /opt/msys2-cross/wrappers/
@@ -67,13 +64,8 @@ RUN chmod +x /opt/msys2-cross/wrappers/* \
     && chmod +x /opt/msys2-cross/config/makepkg-mingw
 
 # Set up pacman and package the toolchain
-COPY scripts/07-setup-pacman.sh /opt/msys2-cross/scripts/
-RUN bash /opt/msys2-cross/scripts/07-setup-pacman.sh
-
-# Build core libraries (optional, can be skipped for faster image build)
-COPY scripts/08-build-core-libs.sh /opt/msys2-cross/scripts/
-COPY MINGW-packages/ /build/MINGW-packages/
-RUN bash /opt/msys2-cross/scripts/08-build-core-libs.sh
+COPY scripts/08-setup-pacman.sh /opt/msys2-cross/scripts/
+RUN bash /opt/msys2-cross/scripts/08-setup-pacman.sh
 
 # Environment setup
 ENV MSYSTEM=UCRT64
@@ -82,8 +74,17 @@ ENV MINGW_CHOST=x86_64-w64-mingw32
 ENV MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
 ENV PATH="/opt/msys2-cross/wrappers:/opt/msys2-cross/config:${PATH}"
 
+# Configure Cargo for Rust cross-compilation
+RUN mkdir -p /root/.cargo /home/builduser/.cargo \
+    && ln -sf /opt/msys2-cross/config/cargo-cross.toml /root/.cargo/config.toml \
+    && ln -sf /opt/msys2-cross/config/cargo-cross.toml /home/builduser/.cargo/config.toml \
+    && chown -R builduser: /home/builduser/.cargo
+
 # Clean up build artifacts
 RUN rm -rf /build /tmp/*
 
+RUN mkdir -p /src && chown builduser: /src
+
+USER builduser
 WORKDIR /src
 CMD ["/bin/bash"]

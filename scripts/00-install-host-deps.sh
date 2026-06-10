@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Minimal deps for building the cross-toolchain (stages 01-06).
+# Deps for building the cross-toolchain (stages 01-07).
 # Changes here invalidate the toolchain cache — keep this stable.
 # Uses dnf intentionally — the Containerfile pins Fedora as the base image.
 dnf install -y \
@@ -20,6 +20,7 @@ dnf install -y \
     diffutils findutils file which \
     tar xz bzip2 zstd \
     pacman fakeroot \
-    python3
+    python3 \
+    rust cargo
 
 dnf clean all
