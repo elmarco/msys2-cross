@@ -299,7 +299,7 @@ install_single() {
     local rc=$?
 
     if [[ $rc -eq 0 ]]; then
-        podman commit -q "${container}" "${WORK_IMAGE}" >/dev/null
+        podman commit -q --change 'USER builduser' "${container}" "${WORK_IMAGE}" >/dev/null
     fi
     podman rm -f "${container}" >/dev/null 2>&1
     return $rc
