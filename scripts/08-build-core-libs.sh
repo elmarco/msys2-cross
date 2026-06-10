@@ -69,11 +69,13 @@ build_and_install() {
     # Move packages to repo
     mv "${_pkgdir}"/*.pkg.tar.* "${REPO_DIR}/" 2>/dev/null || true
 
-    # Install immediately so later packages can depend on them
+    # Install immediately so later packages can link against them.
+    # -Udd skips dep checks — split-package deps (e.g., gettext-runtime)
+    # may not exist yet; the final bulk install resolves everything.
     for pkgfile in "${REPO_DIR}"/mingw-w64-ucrt-x86_64-*"${pkg#mingw-w64-}"*.pkg.tar.*; do
         if [[ -f "${pkgfile}" ]]; then
             echo "==> Installing ${pkgfile##*/}"
-            pacman --config "${PACMAN_CONF}" -U --noconfirm --overwrite='*' "${pkgfile}" || {
+            pacman --config "${PACMAN_CONF}" -Udd --noconfirm --overwrite='*' "${pkgfile}" || {
                 echo "==> ERROR: Failed to install ${pkgfile##*/}"
                 exit 1
             }
