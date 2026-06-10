@@ -167,9 +167,10 @@ find_all_missing_deps() {
         [[ -n "${checked_out[$pkg]+x}" ]] && continue
         checked_out[$pkg]=1
         checkout_pkg "$pkg" >/dev/null 2>&1 || continue
-        if [[ -f "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" ]]; then
+        local srcdir="${_checkout_actual}"
+        if [[ -f "${MINGW_PACKAGES_DIR}/${srcdir}/PKGBUILD" ]]; then
             grep -oP '\$\{MINGW_PACKAGE_PREFIX\}-\K[a-z0-9_-]+' \
-                "${MINGW_PACKAGES_DIR}/${pkg}/PKGBUILD" 2>/dev/null | \
+                "${MINGW_PACKAGES_DIR}/${srcdir}/PKGBUILD" 2>/dev/null | \
                 sort -u | while read -r dep_name; do
                     local dep_pkg="mingw-w64-${dep_name}"
                     if [[ -z "${checked_out[$dep_pkg]+x}" ]]; then
