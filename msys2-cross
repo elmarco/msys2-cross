@@ -20,6 +20,10 @@ msg()  { echo -e "${GREEN}==>${NC} ${BOLD}$1${NC}"; }
 warn() { echo -e "${YELLOW}==> WARNING:${NC} ${BOLD}$1${NC}"; }
 err()  { echo -e "${RED}==> ERROR:${NC} ${BOLD}$1${NC}" >&2; }
 
+build_image() {
+    TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+}
+
 # Common bind mounts for all container runs
 VOLUMES=(
     -v "${MINGW_PACKAGES_DIR}:/src"
@@ -49,7 +53,7 @@ Commands:
   reset                 Remove working image (reset to bootstrap baseline)
   destroy               Remove working image, bootstrap image, and built packages
   rebuild               Rebuild the bootstrap image
-  check-update           Check for version drift against upstream MSYS2
+  check-update          Check for version drift against upstream MSYS2
 
 Package names can omit the "mingw-w64-" prefix:
   msys2-cross build libpng    →  builds mingw-w64-libpng
@@ -323,12 +327,12 @@ cmd_setup() {
     if [[ "$force" -eq 1 ]]; then
         msg "Force-rebuilding bootstrap image..."
         podman rmi -f "${WORK_IMAGE}" 2>/dev/null || true
-        TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+        build_image
     elif podman image exists "${BOOTSTRAP_IMAGE}"; then
         msg "Bootstrap image already exists (use --force to rebuild)"
     else
         msg "Building bootstrap image (this takes 30-60 minutes)..."
-        TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+        build_image
     fi
 
     # Clone MINGW-packages
@@ -580,7 +584,7 @@ cmd_destroy() {
 cmd_rebuild() {
     msg "Rebuilding bootstrap image..."
     podman rmi -f "${WORK_IMAGE}" 2>/dev/null || true
-    TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+    build_image
     msg "Rebuild complete."
 }
 
