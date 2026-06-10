@@ -1,3 +1,4 @@
+# WHY: Plain Makefile uses uname for platform detection; cross-build needs explicit CC and UNAME override
 # Cross-compilation: the Makefile uses UNAME=$(shell uname) to detect the
 # platform. Override to MINGW so the MinGW-specific DLL rules activate.
 sed -i 's|^\(\s*\)make\b|\1make CC=x86_64-w64-mingw32-gcc OFLAGS="-O2" UNAME=MINGW |' PKGBUILD

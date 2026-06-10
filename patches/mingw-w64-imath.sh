@@ -1,3 +1,4 @@
+# WHY: Cross-compiled Windows Python not available; FindPython3 cmake module fails
 # Disable Python bindings — FindPython3 can't find cross-compiled python
 sed -i 's|-DPYTHON=ON|-DPYTHON=OFF|g' PKGBUILD
 grep -q 'DPYTHON' PKGBUILD || sed -i 's|-DCMAKE_INSTALL_PREFIX=|-DPYTHON=OFF -DCMAKE_INSTALL_PREFIX=|' PKGBUILD

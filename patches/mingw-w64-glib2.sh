@@ -1,3 +1,4 @@
+# WHY: GIR runs g-ir-scanner .exe; pyscript2exe needs Windows Python; replace Python deps
 # GIR needs g-ir-scanner (.exe)
 sed -i 's/_enable_gir=yes/_enable_gir=no/' PKGBUILD
 

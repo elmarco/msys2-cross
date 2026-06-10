@@ -1,3 +1,4 @@
+# WHY: GIR introspection runs target .exe; documentation tools unavailable
 # Disable introspection and documentation
 sed -i 's/--auto-features=enabled/--auto-features=enabled -Dintrospection=disabled/' PKGBUILD
 sed -i 's/-Ddocumentation=true/-Ddocumentation=false/g' PKGBUILD

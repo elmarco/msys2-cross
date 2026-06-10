@@ -1,3 +1,4 @@
+# WHY: Plain Makefile — CC not exported globally (by design); needs explicit cross-compiler and .exe handling
 # Replace CC=${CC} (empty since CC is not exported in our env)
 sed -i 's|CC=${CC}|CC=x86_64-w64-mingw32-gcc|g' PKGBUILD
 # Add CC to package() make call (install target triggers sub-makes)

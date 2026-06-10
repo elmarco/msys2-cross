@@ -1,3 +1,4 @@
+# WHY: GIR/man/glslc run target .exe; directx-headers not implicit in cross env; gstreamer too complex
 # Add directx-headers makedep (on MSYS2 these come from mingw-w64-headers, cross needs explicit package)
 sed -i '/makedepends=/a\             "${MINGW_PACKAGE_PREFIX}-directx-headers"' PKGBUILD
 # Disable introspection (requires running target binaries)

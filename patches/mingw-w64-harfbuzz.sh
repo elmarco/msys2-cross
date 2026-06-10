@@ -1,3 +1,4 @@
+# WHY: GIR runs target .exe; ICU and chafa disabled to reduce dep chain; icu split-package gutted
 sed -i 's/-Dintrospection=enabled/-Dintrospection=disabled/g' PKGBUILD
 sed -i 's/-Dicu=enabled/-Dicu=disabled/g' PKGBUILD
 sed -i 's/"-Dicu=enabled"/"-Dicu=disabled"/g' PKGBUILD

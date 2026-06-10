@@ -1,3 +1,4 @@
+# WHY: GIR and man generation run target .exe; gtk-update-icon-cache replaced with native tool
 # Disable introspection and man pages (require running target binaries)
 sed -i 's|--auto-features=enabled|--auto-features=enabled -Dintrospection=false -Dman=false|' PKGBUILD
 # Replace explicit -Dman=true with false (can't delete — breaks if/fi block)

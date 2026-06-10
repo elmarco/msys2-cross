@@ -1,3 +1,4 @@
+# WHY: GMP configure inspects compiled objects assuming ELF but cross-compiler produces PE/COFF
 # GMP cross-compilation is broken without Wine:
 # Its configure scans compiled object files assuming ELF format,
 # but the cross-compiler produces PE/COFF (Windows) objects.

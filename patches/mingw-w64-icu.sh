@@ -1,3 +1,4 @@
+# WHY: ICU builds data-processing tools and runs them; cross-build needs native tools built first
 # ICU cross-compilation requires a native build first for data-processing tools.
 # Insert a native build before the cross-build, and add --with-cross-build.
 

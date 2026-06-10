@@ -1,3 +1,4 @@
+# WHY: Windows Python not available; lzo2 has type mismatch in cross-compilation
 # Windows python deps → host python handles fonttools
 sed -i 's|"${MINGW_PACKAGE_PREFIX}-python"|"${MINGW_PACKAGE_PREFIX}-cc"|' PKGBUILD
 sed -i 's|"${MINGW_PACKAGE_PREFIX}-python-fonttools"|"${MINGW_PACKAGE_PREFIX}-cc"|' PKGBUILD

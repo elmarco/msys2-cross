@@ -1,3 +1,4 @@
+# WHY: Offline build — container has no network; git source must become a tarball
 # Replace git source with tarball (container has no network for git clone)
 sed -i 's|"git+https://github.com/KhronosGroup/OpenGL-Registry.git#commit=$_commit"|"https://github.com/KhronosGroup/OpenGL-Registry/archive/$_commit.tar.gz"|' PKGBUILD
 # Remove pkgver() since we're using a tarball, not a git checkout

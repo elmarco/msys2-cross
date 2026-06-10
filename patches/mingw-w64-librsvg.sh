@@ -1,3 +1,4 @@
+# WHY: vapigen (Vala) not available; GIR runs target .exe; docs need gi-docgen
 # Disable Vala bindings in both static and shared builds (vapigen not available)
 sed -i 's|--auto-features=enabled|& -Dvala=disabled|' PKGBUILD
 # Disable introspection, docs, and pixbuf-loader in shared build

@@ -1,3 +1,4 @@
+# WHY: GIR runs target .exe; gi-docgen unavailable; Windows Python not available
 # Disable introspection and docs (gi-docgen not available)
 sed -i 's|--auto-features=enabled|--auto-features=enabled -Dintrospection=disabled|' PKGBUILD
 sed -i 's|-Ddocumentation=true|-Ddocumentation=false|g' PKGBUILD
