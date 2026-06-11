@@ -22,6 +22,7 @@ dnf install -y \
     doxygen graphviz swig vala \
     gtk-doc itstool \
     po4a nasm ragel \
+    groff autoconf-archive xmlto \
     \
     gtk-update-icon-cache \
     \

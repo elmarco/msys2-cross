@@ -361,7 +361,7 @@ cmd_build() {
         exit 1
     fi
 
-    makepkg_args+=("--skipchecksums" "-sf")
+    makepkg_args+=("--skipchecksums" "-f")
 
     ensure_mingw_packages
 

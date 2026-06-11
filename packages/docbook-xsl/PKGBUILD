@@ -1,0 +1,7 @@
+pkgname=docbook-xsl
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy — native Fedora docbook-style-xsl satisfies this dependency"
+arch=('any')
+license=('custom')
+package() { mkdir -p "${pkgdir}/opt/msys2-cross"; }

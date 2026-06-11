@@ -1,0 +1,7 @@
+pkgname=groff
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy — native Fedora groff satisfies this dependency"
+arch=('any')
+license=('GPL')
+package() { mkdir -p "${pkgdir}/opt/msys2-cross"; }

@@ -71,7 +71,7 @@ build_package() {
 
 # Package in dependency order
 # Build all packages in the packages/ directory (toolchain + dummies)
-for pkgdir in "${PKG_DIR}"/mingw-w64-ucrt-x86_64-*/; do
+for pkgdir in "${PKG_DIR}"/*/; do
     build_package "${pkgdir%/}"
 done
 
