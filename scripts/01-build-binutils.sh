@@ -25,6 +25,6 @@ cd "${BUILD_DIR}/binutils"
     --with-system-zlib
 
 make -j"${JOBS}"
-make install
+make install DESTDIR="${DESTDIR}"
 
-echo "==> Cross-binutils installed to /usr/bin/${TARGET}-*"
+echo "==> Cross-binutils installed to ${DESTDIR}/usr/bin/${TARGET}-*"

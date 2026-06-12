@@ -20,6 +20,6 @@ cd "${BUILD_DIR}/winpthreads"
     --enable-shared
 
 make -j"${JOBS}"
-make install
+make install DESTDIR="${DESTDIR}"
 
-echo "==> winpthreads installed to ${MINGW_PREFIX}/"
+echo "==> winpthreads installed to ${DESTDIR}${MINGW_PREFIX}/"

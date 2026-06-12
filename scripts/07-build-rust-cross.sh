@@ -70,8 +70,8 @@ BUILT_LIBS=$(dirname "${PROBE}")
 echo "==> Found artifacts in: ${BUILT_LIBS}"
 echo "==> Artifact count: $(ls "${BUILT_LIBS}"/*.rlib 2>/dev/null | wc -l) rlib files"
 
-# Install into the host rustc sysroot
-DEST="${RUST_SYSROOT}/lib/rustlib/${RUST_TARGET}/lib"
+# Install into the host rustc sysroot (or DESTDIR staging tree)
+DEST="${DESTDIR}${RUST_SYSROOT}/lib/rustlib/${RUST_TARGET}/lib"
 mkdir -p "${DEST}"
 cp -a "${BUILT_LIBS}"/*.rlib "${DEST}/"
 cp -a "${BUILT_LIBS}"/*.rmeta "${DEST}/" 2>/dev/null || true
@@ -86,15 +86,17 @@ if ! ls "${DEST}"/libstd-*.rlib &>/dev/null; then
 fi
 echo "==> Installed ${TOTAL_INSTALLED} rlib files to ${DEST}"
 
-# Verify cross-compilation works
-echo "==> Verifying Rust cross-compilation..."
-TMPDIR=$(mktemp -d)
-cat > "${TMPDIR}/hello.rs" << 'EOF'
+# Verify cross-compilation works (skip when staging — rustc won't find the libs)
+if [[ -z "${DESTDIR}" ]]; then
+    echo "==> Verifying Rust cross-compilation..."
+    TMPDIR=$(mktemp -d)
+    cat > "${TMPDIR}/hello.rs" << 'EOF'
 fn main() { println!("Hello from cross-compiled Rust!"); }
 EOF
-rustc --target "${RUST_TARGET}" "${TMPDIR}/hello.rs" -o "${TMPDIR}/hello.exe"
-echo "==> Rust cross-compilation verified: $(file "${TMPDIR}/hello.exe")"
-rm -rf "${TMPDIR}"
+    rustc --target "${RUST_TARGET}" "${TMPDIR}/hello.rs" -o "${TMPDIR}/hello.exe"
+    echo "==> Rust cross-compilation verified: $(file "${TMPDIR}/hello.exe")"
+    rm -rf "${TMPDIR}"
+fi
 
 # Clean up build artifacts to keep layer size small
 rm -rf "${RUST_SRC_DIR}" "${BUILD_DIR}" "${SRC_DIR}"

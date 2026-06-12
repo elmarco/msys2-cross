@@ -20,20 +20,27 @@ cd "${BUILD_DIR}/headers"
     --with-default-win32-winnt=0xA00 \
     --with-default-msvcrt=ucrt
 
-make install
+make install DESTDIR="${DESTDIR}"
 
 # GCC cross-compiler looks for headers in /usr/<target>/include and
 # libraries in /usr/<target>/lib. Binutils (stage 1) already created
 # /usr/<target>/ as a real directory, so we can't replace it with a
 # symlink. Instead, symlink the include and lib subdirectories into it.
-ln -sfn "${MINGW_PREFIX}/include" "/usr/${TARGET}/include"
+#
+# When DESTDIR is set (RPM/bare-host build), symlinks use staging paths
+# so GCC's binary relocation resolves them during the build.
+_sysroot="${DESTDIR}/usr/${TARGET}"
+_prefix="${DESTDIR}${MINGW_PREFIX}"
+
+ln -sfn "${_prefix}/include" "${_sysroot}/include"
 
 # Move binutils' lib content (ldscripts) into the sysroot and replace
 # with a symlink so GCC finds CRT libs in /usr/<target>/lib -> /ucrt64/lib
-if [[ -d "/usr/${TARGET}/lib" && ! -L "/usr/${TARGET}/lib" ]]; then
-    cp -a "/usr/${TARGET}/lib/"* "${MINGW_PREFIX}/lib/" 2>/dev/null || true
-    rm -rf "/usr/${TARGET}/lib"
+if [[ -d "${_sysroot}/lib" && ! -L "${_sysroot}/lib" ]]; then
+    mkdir -p "${_prefix}/lib"
+    cp -a "${_sysroot}/lib/"* "${_prefix}/lib/" 2>/dev/null || true
+    rm -rf "${_sysroot}/lib"
 fi
-ln -sfn "${MINGW_PREFIX}/lib" "/usr/${TARGET}/lib"
+ln -sfn "${_prefix}/lib" "${_sysroot}/lib"
 
-echo "==> MinGW-w64 headers installed to ${MINGW_PREFIX}/include/"
+echo "==> MinGW-w64 headers installed to ${_prefix}/include/"

@@ -24,6 +24,6 @@ cd "${BUILD_DIR}/crt"
     --enable-shared
 
 make -j"${JOBS}"
-make install
+make install DESTDIR="${DESTDIR}"
 
-echo "==> MinGW-w64 CRT installed to ${MINGW_PREFIX}/lib/"
+echo "==> MinGW-w64 CRT installed to ${DESTDIR}${MINGW_PREFIX}/lib/"

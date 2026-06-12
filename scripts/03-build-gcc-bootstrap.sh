@@ -30,6 +30,6 @@ cd "${BUILD_DIR}/gcc-bootstrap"
     --with-newlib
 
 make -j"${JOBS}" all-gcc
-make install-gcc
+make install-gcc DESTDIR="${DESTDIR}"
 
 echo "==> Bootstrap GCC (C only) installed"

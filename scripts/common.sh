@@ -15,12 +15,20 @@ SYSROOT=/ucrt64
 # Build parallelism
 JOBS=$(nproc)
 
-# Directories
-SRC_DIR=/build/src
-BUILD_DIR=/build/build
-INSTALL_STAGING=/build/staging
-# Pre-downloaded sources (populated by download-sources.sh, COPY'd in)
-SOURCES_CACHE=/build/sources
+# Directories (overridable for RPM builds / bare-host usage)
+SRC_DIR=${SRC_DIR:-/build/src}
+BUILD_DIR=${BUILD_DIR:-/build/build}
+INSTALL_STAGING=${INSTALL_STAGING:-/build/staging}
+SOURCES_CACHE=${SOURCES_CACHE:-/build/sources}
+
+# DESTDIR for staged installs (empty = install directly, as in container)
+DESTDIR=${DESTDIR:-}
+export DESTDIR
+
+# When staging, ensure cross-tools are found in the staging tree
+if [[ -n "${DESTDIR}" ]]; then
+    export PATH="${DESTDIR}/usr/bin:${PATH}"
+fi
 
 # Source URLs
 GCC_URL="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
