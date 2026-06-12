@@ -67,6 +67,10 @@ RUN chmod +x /opt/msys2-cross/wrappers/* \
 COPY scripts/08-setup-pacman.sh /opt/msys2-cross/scripts/
 RUN bash /opt/msys2-cross/scripts/08-setup-pacman.sh
 
+# Build base libraries (libiconv, gettext) that MSYS2 packages implicitly need
+COPY scripts/09-build-base-libs.sh /opt/msys2-cross/scripts/
+RUN bash /opt/msys2-cross/scripts/09-build-base-libs.sh
+
 # Environment setup
 ENV MSYSTEM=UCRT64
 ENV MINGW_PREFIX=/ucrt64

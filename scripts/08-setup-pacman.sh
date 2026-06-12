@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 echo "========================================="
-echo "Stage 7: Set up pacman + local repo"
+echo "Stage 8: Set up pacman + local repo"
 echo "========================================="
 
 REPO_DIR=/opt/msys2-cross/repo
@@ -42,37 +42,46 @@ pacman --config "${PACMAN_CONF}" -Sy --noconfirm 2>/dev/null || true
 chmod +x /opt/msys2-cross/wrappers/*
 chmod +x /opt/msys2-cross/config/makepkg-mingw
 
-# Build toolchain packages from the bootstrap artifacts.
-# These are "repackaging" PKGBUILDs that capture the already-installed
-# cross-compiler into pacman packages.
-build_package() {
-    local pkgdir="$1"
-    local pkgname
-    pkgname=$(basename "${pkgdir}")
+# Use host makepkg (not makepkg-mingw) since these are packaging
+# scripts, not cross-compilation builds.
+MAKEPKG_CONF=/opt/msys2-cross/config/makepkg_mingw.conf
 
-    echo "==> Packaging ${pkgname}..."
-
-    # Use host makepkg (not makepkg-mingw) since these are packaging
-    # scripts, not cross-compilation builds.
-    local _conf=/opt/msys2-cross/config/makepkg_mingw.conf
-
+_run_makepkg() {
+    local dir="$1"
     if [[ "$(id -u)" == "0" ]]; then
-        chown -R builduser: "${pkgdir}"
-        su builduser -s /bin/bash -c "cd '${pkgdir}' && makepkg --config '${_conf}' --nodeps --skipinteg --nocheck --force"
+        chown -R builduser: "${dir}"
+        su builduser -s /bin/bash -c "cd '${dir}' && makepkg --config '${MAKEPKG_CONF}' --nodeps --skipinteg --nocheck --force"
     else
-        cd "${pkgdir}"
-        makepkg --config "${_conf}" --nodeps --skipinteg --nocheck --force
+        (cd "${dir}" && makepkg --config "${MAKEPKG_CONF}" --nodeps --skipinteg --nocheck --force)
     fi
-
-    # Move built packages to the repo (match any pkg.tar.* extension)
-    mv "${pkgdir}"/*.pkg.tar.* "${REPO_DIR}/" 2>/dev/null || true
-    echo "==> Packages in repo: $(ls "${REPO_DIR}"/*.pkg.tar.* 2>/dev/null | wc -l)"
+    mv "${dir}"/*.pkg.tar.* "${REPO_DIR}/"
 }
 
-# Package in dependency order
-# Build all packages in the packages/ directory (toolchain + dummies)
+# Build dummy packages from the list file
+DUMMY_LIST=/opt/msys2-cross/config/dummy-packages.list
+_dummy_dir=$(mktemp -d)
+chmod 755 "${_dummy_dir}"
+while IFS= read -r name; do
+    [[ -z "$name" || "$name" == \#* ]] && continue
+    echo "==> Dummy: ${name}"
+    mkdir -p "${_dummy_dir}/${name}"
+    cat > "${_dummy_dir}/${name}/PKGBUILD" <<EOF
+pkgname=${name}
+pkgver=1.0
+pkgrel=1
+pkgdesc="Dummy — satisfied by host toolchain"
+arch=('any')
+license=('GPL')
+package() { mkdir -p "\${pkgdir}/opt/msys2-cross"; }
+EOF
+    _run_makepkg "${_dummy_dir}/${name}"
+done < "${DUMMY_LIST}"
+rm -rf "${_dummy_dir}"
+
+# Build real packages (toolchain repackaging, wrappers with provides=, etc.)
 for pkgdir in "${PKG_DIR}"/*/; do
-    build_package "${pkgdir%/}"
+    echo "==> Packaging $(basename "${pkgdir%/}")..."
+    _run_makepkg "${pkgdir%/}"
 done
 
 # Create repo database

@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 echo "========================================="
-echo "Stage 9: Build Rust std for mingw target"
+echo "Stage 7: Build Rust std for mingw target"
 echo "========================================="
 
 RUST_SRC_DIR="${SRC_DIR}/rustc-${RUST_VERSION}-src"

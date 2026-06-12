@@ -23,6 +23,7 @@ dnf install -y \
     gtk-doc itstool \
     po4a nasm ragel \
     groff autoconf-archive xmlto \
+    lzip \
     \
     gtk-update-icon-cache \
     \
