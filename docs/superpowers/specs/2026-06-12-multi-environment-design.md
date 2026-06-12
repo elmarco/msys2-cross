@@ -70,57 +70,110 @@ esac
 MINGW_CHOST="${TARGET}"
 MSYSTEM_LOWER="${MSYSTEM,,}"
 
-# Compiler tool names
+# Compiler and binutils tool names differ between GCC and LLVM
 if [ "$CC_FAMILY" = "gcc" ]; then
     CROSS_CC="${TARGET}-gcc"
     CROSS_CXX="${TARGET}-g++"
+    CROSS_AR="${TARGET}-ar"
+    CROSS_STRIP="${TARGET}-strip"
+    CROSS_OBJCOPY="${TARGET}-objcopy"
+    CROSS_RANLIB="${TARGET}-ranlib"
+    CROSS_WINDRES="${TARGET}-windres"
+    CROSS_DLLTOOL="${TARGET}-dlltool"
 else
     CROSS_CC="${TARGET}-clang"
     CROSS_CXX="${TARGET}-clang++"
+    CROSS_AR="llvm-ar"
+    CROSS_STRIP="llvm-strip"
+    CROSS_OBJCOPY="llvm-objcopy"
+    CROSS_RANLIB="llvm-ranlib"
+    CROSS_WINDRES="llvm-windres"
+    CROSS_DLLTOOL="llvm-dlltool"
 fi
-CROSS_AR="${TARGET}-ar"
-CROSS_STRIP="${TARGET}-strip"
-CROSS_OBJCOPY="${TARGET}-objcopy"
-CROSS_RANLIB="${TARGET}-ranlib"
-CROSS_WINDRES="${TARGET}-windres"
+
+# Compiler flags differ by architecture and compiler family
+case "${CC_FAMILY}:${CMAKE_SYSTEM_PROCESSOR}" in
+    gcc:x86_64)
+        CROSS_CFLAGS="-march=nocona -msahf -mtune=generic -O2 -pipe"
+        ;;
+    clang:x86_64)
+        CROSS_CFLAGS="-O2 -pipe"
+        ;;
+    clang:aarch64)
+        CROSS_CFLAGS="-O2 -pipe"
+        ;;
+esac
+CROSS_CXXFLAGS="${CROSS_CFLAGS}"
 ```
 
 `config/mingw-env.sh` becomes a thin re-export of env-config.sh for use inside the container (where scripts live at `/opt/msys2-cross/`).
 
-`scripts/common.sh` keeps only version pins and download URLs (environment-independent).
+`scripts/common.sh` keeps only version pins and download URLs (environment-independent). Gains `LLVM_VERSION` alongside existing `GCC_VERSION`.
 
 ### 2. Build scripts
 
 Build scripts source `env-config.sh` and use `${TARGET}`, `${CROSS_CC}`, `${MINGW_PREFIX}`, etc. instead of hardcoded values.
 
-**GCC path (CC_FAMILY=gcc):**
-- `01-build-binutils.sh` — GNU binutils + ld
-- `03-build-gcc-bootstrap.sh` — bootstrap GCC (C only)
-- `06-build-gcc-final.sh` — final GCC (C, C++, LTO)
+**GCC path (CC_FAMILY=gcc) — build order:**
+1. `01-build-binutils.sh` — GNU binutils + ld
+2. `02-build-headers.sh` — mingw-w64 headers
+3. `03-build-gcc-bootstrap.sh` — bootstrap GCC (C only, no CRT)
+4. `04-build-crt.sh` — mingw-w64 CRT (uses bootstrap GCC)
+5. `05-build-winpthreads.sh` — POSIX threads (uses bootstrap GCC)
+6. `06-build-gcc-final.sh` — final GCC (C, C++, LTO, links against CRT)
 
-**Clang path (CC_FAMILY=clang):**
-- `03-build-llvm.sh` — LLVM, Clang, LLD, compiler-rt for `${TARGET}`
+**Clang path (CC_FAMILY=clang) — build order:**
+1. `03-build-llvm.sh` — LLVM, Clang, LLD (self-contained, no CRT needed)
+2. `02-build-headers.sh` — mingw-w64 headers
+3. `04-build-crt.sh` — mingw-w64 CRT (uses freshly-built clang)
+4. `05-build-winpthreads.sh` — POSIX threads (uses clang)
+5. `03-build-llvm-runtimes.sh` — compiler-rt, libunwind, libc++, libc++abi (need CRT)
 
-**Shared (both paths):**
-- `02-build-headers.sh` — mingw-w64 headers
-- `04-build-crt.sh` — mingw-w64 CRT (uses `${CROSS_CC}`)
-- `05-build-winpthreads.sh` — POSIX threads (uses `${CROSS_CC}`)
+Note: the Clang path requires **two LLVM build steps**. The first builds the compiler itself. The second builds the runtime libraries (compiler-rt builtins, libunwind, libc++, libc++abi) which depend on CRT and headers being available. This mirrors the [mstorsjo/llvm-mingw](https://github.com/mstorsjo/llvm-mingw) build process.
+
+**Shared (both paths, run after the compiler-specific steps):**
 - `07-build-rust-cross.sh` — Rust std for `${RUST_TARGET}`
-- `08-setup-pacman.sh` — pacman DB + dummy packages
+- `08-setup-pacman.sh` — pacman DB + dummy packages + config generation
 - `09-build-base-libs.sh` — base libraries
-
-The GCC path still produces standard `${TARGET}-gcc` binaries in `/usr/bin/`. The Clang path produces `${TARGET}-clang` binaries. Shared scripts use `${CROSS_CC}` so they work with either.
 
 ### 3. Config files
 
 **Shell-based (use variables directly, no generation needed):**
 - `config/mingw-env.sh` — sources env-config.sh, exports MSYSTEM/MINGW_PREFIX/etc.
-- `config/makepkg_mingw.conf` — `CHOST`, `STRIP`, `OBJCOPY` come from env vars
-- `config/dummy-packages.list` — stores base names only (e.g., `cmake`, `python`). The prefix `${MINGW_PACKAGE_PREFIX}-` is prepended by `08-setup-pacman.sh` at package creation time.
+- `config/makepkg_mingw.conf` — `CHOST`, `STRIP`, `OBJCOPY`, `CFLAGS` come from env vars. Architecture-specific flags (`-march=nocona` etc.) are set by env-config.sh's `CROSS_CFLAGS`.
+
+**Dummy packages (`config/dummy-packages.list`):**
+
+The list stores base names only (e.g., `cmake`, `python`). The prefix `${MINGW_PACKAGE_PREFIX}-` is prepended by `08-setup-pacman.sh` at package creation time.
+
+However, some packages are environment-specific:
+- GCC-only: `gcc-libgfortran`, `gcc-libs`
+- Clang-only: `clang`, `clang-libs`, `lld`, `llvm`, `compiler-rt`
+- Shared: `cmake`, `meson`, `python`, `autotools`, etc.
+
+The list uses section markers to handle this:
+
+```
+# [shared]
+cmake
+meson
+python
+...
+# [gcc]
+gcc-libgfortran
+gcc-libs
+# [clang]
+clang
+clang-libs
+lld
+compiler-rt
+```
+
+`08-setup-pacman.sh` reads the file and includes `[shared]` + the section matching `${CC_FAMILY}`.
 
 **Generated at container build time (non-shell formats):**
 
-Templates in `config/` with `@VARIABLE@` placeholders. A generation step in the Containerfile (or in `08-setup-pacman.sh`) uses `sed` to expand them.
+Templates in `config/` with `@VARIABLE@` placeholders. A generation step in `08-setup-pacman.sh` uses `sed` to expand them.
 
 - `config/cross-file.meson.in` → `/opt/msys2-cross/generated/cross-file.meson`
 - `config/toolchain.cmake.in` → `/opt/msys2-cross/generated/toolchain.cmake`
@@ -138,43 +191,66 @@ The 4 patches that hardcode the cross triple (`mingw-w64-giflib.sh`, `mingw-w64-
 
 ### 4. Containerfile
 
-Single Containerfile, parameterized by `ARG MSYSTEM`:
+Single Containerfile, parameterized by `ARG MSYSTEM` plus derived ARGs passed by the CLI:
 
 ```dockerfile
 ARG MSYSTEM=UCRT64
+ARG MINGW_PREFIX=/ucrt64
+ARG TARGET=x86_64-w64-mingw32
 
 # Stage 1: Build toolchain from source
 FROM fedora:latest AS toolchain-builder
 ARG MSYSTEM
 COPY scripts/ /opt/msys2-cross/scripts/
 COPY sources/ /build/sources/
-RUN source /opt/msys2-cross/scripts/env-config.sh \
-    && bash scripts/02-build-headers.sh \
+RUN export MSYSTEM=${MSYSTEM} \
+    && source /opt/msys2-cross/scripts/env-config.sh \
     && if [ "$CC_FAMILY" = "gcc" ]; then \
-           bash scripts/01-build-binutils.sh \
-        && bash scripts/03-build-gcc-bootstrap.sh \
-        && bash scripts/04-build-crt.sh \
-        && bash scripts/05-build-winpthreads.sh \
-        && bash scripts/06-build-gcc-final.sh; \
+           bash /opt/msys2-cross/scripts/01-build-binutils.sh \
+        && bash /opt/msys2-cross/scripts/02-build-headers.sh \
+        && bash /opt/msys2-cross/scripts/03-build-gcc-bootstrap.sh \
+        && bash /opt/msys2-cross/scripts/04-build-crt.sh \
+        && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
+        && bash /opt/msys2-cross/scripts/06-build-gcc-final.sh; \
        else \
-           bash scripts/03-build-llvm.sh \
-        && bash scripts/04-build-crt.sh \
-        && bash scripts/05-build-winpthreads.sh; \
+           bash /opt/msys2-cross/scripts/03-build-llvm.sh \
+        && bash /opt/msys2-cross/scripts/02-build-headers.sh \
+        && bash /opt/msys2-cross/scripts/04-build-crt.sh \
+        && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
+        && bash /opt/msys2-cross/scripts/03-build-llvm-runtimes.sh; \
        fi \
-    && bash scripts/07-build-rust-cross.sh \
+    && bash /opt/msys2-cross/scripts/07-build-rust-cross.sh \
     && rm -rf /build
 
 # Stage 2: Final cross-compilation environment
 FROM fedora:latest AS msys2-cross
 ARG MSYSTEM
-# ... install host deps, copy toolchain, generate configs, setup pacman
+ARG MINGW_PREFIX
+ARG TARGET
+
+COPY scripts/common.sh scripts/env-config.sh scripts/00-install-host-deps.sh scripts/00-install-extra-deps.sh /opt/msys2-cross/scripts/
+RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh
+RUN bash /opt/msys2-cross/scripts/00-install-extra-deps.sh
+
+# Copy sysroot and cross-compiler from builder
+# MINGW_PREFIX and TARGET are passed as ARGs so COPY can expand them
+COPY --from=toolchain-builder ${MINGW_PREFIX} ${MINGW_PREFIX}
+COPY --from=toolchain-builder /usr/bin/${TARGET}-* /usr/bin/
+COPY --from=toolchain-builder /usr/${TARGET} /usr/${TARGET}
+# ... rest of setup
 ```
 
-Stage 2 `COPY` commands that currently reference `/ucrt64` must use the `MINGW_PREFIX` from env-config.sh. Since Dockerfile `COPY` doesn't support variable expansion, Stage 2 uses a shell-based `RUN` step to copy from the builder via a bind-mount, or the build scripts install directly to `${MINGW_PREFIX}` (which varies by environment) and Stage 2 copies `${MINGW_PREFIX}` generically.
+The key insight: Dockerfile `ARG` values ARE expanded in `COPY` paths. The `msys2-cross` CLI computes `MINGW_PREFIX` and `TARGET` from `MSYSTEM` and passes all three as `--build-arg`. This avoids needing shell logic between `ARG` and `COPY`.
+
+For the GCC-specific paths (`/usr/lib64/gcc/${TARGET}`, `/usr/libexec/gcc/${TARGET}`), the Containerfile uses a conditional `RUN` step that only copies them when `CC_FAMILY=gcc`.
 
 Built with:
 ```sh
-podman build --build-arg MSYSTEM=CLANG64 -t msys2-cross-clang64 .
+podman build \
+    --build-arg MSYSTEM=CLANG64 \
+    --build-arg MINGW_PREFIX=/clang64 \
+    --build-arg TARGET=x86_64-w64-mingw32 \
+    -t msys2-cross-clang64 .
 ```
 
 ### 5. CLI (`msys2-cross`)
@@ -185,7 +261,7 @@ MSYSTEM=CLANG64 ./msys2-cross build libpng
 ./msys2-cross --msystem=CLANG64 build libpng
 ```
 
-Parse `--msystem` early (before command dispatch). If not provided, use `$MSYSTEM` or default to `UCRT64`.
+Parse `--msystem` early (before command dispatch). If not provided, use `$MSYSTEM` or default to `UCRT64`. Source `env-config.sh` to populate all derived variables, then use them for image names, build args, etc.
 
 **Image naming:**
 ```
@@ -198,61 +274,119 @@ WORK_IMAGE="msys2-cross-${MSYSTEM_LOWER}-work"
 ./msys2-cross --msystem=CLANG64 setup
 ```
 
-Calls `podman build --build-arg MSYSTEM=CLANG64 -t msys2-cross-clang64 .`
+Computes derived args from MSYSTEM via env-config.sh, then calls:
+```sh
+podman build \
+    --build-arg MSYSTEM=CLANG64 \
+    --build-arg MINGW_PREFIX=/clang64 \
+    --build-arg TARGET=x86_64-w64-mingw32 \
+    -t msys2-cross-clang64 .
+```
 
 **Source downloads:**
 `download-sources.sh` gains LLVM source download (llvm-project tarball) alongside GCC sources. Both are always downloaded (they're shared across environments).
 
 **All other commands** (`build`, `install`, `deps`, `shell`, etc.) work unchanged — they operate on the image identified by `MSYSTEM_LOWER`.
 
-### 6. LLVM build (`scripts/03-build-llvm.sh`)
+### 6. LLVM build scripts
 
-Build llvm-mingw-style toolchain from LLVM source:
+Building a working llvm-mingw toolchain requires multiple steps, modeled after [mstorsjo/llvm-mingw](https://github.com/mstorsjo/llvm-mingw):
 
-1. Build LLVM + Clang + LLD targeting `${TARGET}`
-2. Build compiler-rt (builtins, sanitizers) for `${TARGET}`
-3. Install to `/usr/bin/${TARGET}-clang`, etc.
+**`scripts/03-build-llvm.sh` — the compiler itself:**
+1. Build LLVM + Clang + LLD with `cmake -G Ninja`
+   - `-DLLVM_TARGETS_TO_BUILD` set per architecture (X86 or AArch64)
+   - `-DLLVM_DEFAULT_TARGET_TRIPLE=${TARGET}`
+   - `-DLLVM_INSTALL_TOOLCHAIN_ONLY=ON`
+2. Install to `/usr/` — produces `clang`, `lld`, `llvm-ar`, `llvm-strip`, etc.
+3. Create target-prefixed symlinks: `${TARGET}-clang` → `clang`, etc.
 
-Pin to a specific LLVM version in `common.sh` (matched to MSYS2's current LLVM version).
+**`scripts/03-build-llvm-runtimes.sh` — runtime libraries (runs after CRT):**
+1. Build compiler-rt builtins for `${TARGET}` (provides `__muldi3`, `__divdi3`, etc.)
+2. Build libunwind for `${TARGET}` (C++ exception unwinding)
+3. Build libc++ and libc++abi for `${TARGET}` (C++ standard library)
+4. Install all to `${MINGW_PREFIX}/lib/`
 
-LLVM build uses `cmake -G Ninja` and takes ~1-2h. Cached by the multi-stage Containerfile like GCC is today.
+Each step uses `cmake -G Ninja` with the freshly-built clang as the compiler and the CRT that was built in between.
+
+Pin to a specific LLVM version in `common.sh` (matched to MSYS2's current LLVM version — currently 20.x).
 
 ### 7. RPM spec
 
-`msys2-cross.spec` would need to be parameterized or split into per-environment spec files. Since the RPM packaging is secondary to the container workflow, this can be deferred — the spec file can initially remain UCRT64-only.
+Deferred — the spec file initially remains UCRT64-only.
 
 ## Migration path
 
-Phase 1 — Parameterize UCRT64 (no functional change):
-1. Create `env-config.sh` with UCRT64 values
-2. Refactor all scripts, configs, and wrappers to use variables
-3. Generate meson/cmake/cargo configs at build time
-4. Add `--msystem` to CLI
-5. Rename images to include environment suffix
-6. Verify UCRT64 still builds and works identically
+### Phase 1 — Parameterize UCRT64 (no functional change)
 
-Phase 2 — Add CLANG64:
+Split into sub-phases with verification after each to isolate regressions:
+
+**Phase 1a — Baseline capture:**
+1. Build UCRT64 image, run all smoke tests, record results
+2. Build a known package (zlib), record package contents (`bsdtar -tf *.pkg.tar.zst`)
+3. Capture installed file list: `pacman -Ql` inside the container
+
+**Phase 1b — Create env-config.sh, refactor build scripts:**
+1. Create `scripts/env-config.sh` with the UCRT64 case
+2. Have each build script (01-07) source env-config.sh and replace hardcoded `TARGET`, `MINGW_PREFIX` with variables
+3. `common.sh` keeps version pins only, drops `TARGET`/`MINGW_PREFIX`
+4. **Verify:** Rebuild UCRT64 image, run smoke tests, compare against Phase 1a baseline
+
+**Phase 1c — Refactor config files and wrappers:**
+1. Parameterize `makepkg_mingw.conf` (CHOST, STRIP, OBJCOPY, CFLAGS)
+2. Create `.in` templates for meson cross-file, cmake toolchain, cargo config
+3. Add config generation step to `08-setup-pacman.sh`
+4. Parameterize wrappers (mingw-cmake, mingw-meson, mingw-pkg-config)
+5. Update the 4 hardcoded patches
+6. Restructure dummy-packages.list with section markers
+7. **Verify:** Rebuild, smoke tests, build zlib, compare against baseline
+
+**Phase 1d — Refactor CLI and Containerfile:**
+1. Add `--msystem` flag parsing to msys2-cross CLI
+2. Rename image variables to include `${MSYSTEM_LOWER}`
+3. Add `ARG MSYSTEM`, `ARG MINGW_PREFIX`, `ARG TARGET` to Containerfile
+4. Replace hardcoded paths in Containerfile `COPY` commands
+5. **Verify:** Rebuild with `--build-arg MSYSTEM=UCRT64`, smoke tests, build zlib, compare against baseline. Must produce byte-identical packages.
+
+### Phase 2 — Add CLANG64
+
 1. Add CLANG64 case to env-config.sh
-2. Write `03-build-llvm.sh`
-3. Add LLVM source to `download-sources.sh`
-4. Test CLANG64 builds with known packages
+2. Write `03-build-llvm.sh` and `03-build-llvm-runtimes.sh`
+3. Add `LLVM_VERSION` to `common.sh` and LLVM source to `download-sources.sh`
+4. **Verify:** Build CLANG64 image, run smoke tests, build zlib + libpng
 
-Phase 3 — Add CLANGARM64:
+### Phase 3 — Add CLANGARM64
+
 1. Add CLANGARM64 case to env-config.sh
-2. Verify aarch64 cross-compilation works
-3. Test with known packages (may need additional patches for aarch64-specific issues)
+2. Verify aarch64 cross-compilation works with the same scripts
+3. **Verify:** Build CLANGARM64 image, run smoke tests, build zlib
+4. May need additional patches for aarch64-specific issues (different alignment, no SSE/AVX intrinsics, etc.)
+
+## Verification strategy
+
+Each sub-phase gate:
+
+| Check | How | Pass criteria |
+|-------|-----|---------------|
+| Image builds | `podman build` completes | Exit 0 |
+| Smoke tests | Run all 6 tests in `tests/` | All pass |
+| Known package | Build zlib, inspect output | `bsdtar -tf` matches baseline |
+| Installed files | `pacman -Ql` inside container | Matches baseline (Phase 1 only) |
+| Cross-compiler works | `${CROSS_CC} -v` | Reports correct target triple |
+| Rust cross works | `cargo build --target ${RUST_TARGET}` | Produces PE binary |
 
 ## Scope boundaries
 
 **In scope:**
 - env-config.sh central module
 - Parameterization of all scripts, configs, wrappers
-- LLVM build script
+- LLVM build scripts (03-build-llvm.sh, 03-build-llvm-runtimes.sh)
 - CLI `--msystem` flag
 - Per-environment image naming
 - Config file generation (meson, cmake, cargo)
+- Dummy packages list restructuring with per-CC_FAMILY sections
 - Patch updates for 4 affected patches
 - download-sources.sh update for LLVM sources
+- Per-sub-phase verification with baseline comparison
 
 **Out of scope (deferred):**
 - RPM spec parameterization
