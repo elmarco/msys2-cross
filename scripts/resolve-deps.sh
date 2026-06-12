@@ -66,6 +66,7 @@ get_deps() {
 
 declare -A visited=()
 declare -A in_stack=()
+declare -A rebuild_set=()
 result=()
 
 resolve() {
@@ -80,7 +81,8 @@ resolve() {
         local name="${dep#mingw-w64-ucrt-x86_64-}"
         local child="mingw-w64-$name"
         if [[ -n "${in_stack[$child]+x}" ]]; then
-            echo "  -> circular dependency: ${srcpkg} <-> ${child} (building with --nodeps)" >&2
+            echo "  -> circular dependency: ${srcpkg} <-> ${child} (will rebuild ${srcpkg})" >&2
+            rebuild_set[$srcpkg]=1
             continue
         fi
         resolve "$child"
@@ -99,3 +101,10 @@ resolve "$1"
 for p in "${result[@]}"; do
     echo "$p"
 done
+
+if [[ ${#rebuild_set[@]} -gt 0 ]]; then
+    echo "---rebuild---"
+    for p in "${result[@]}"; do
+        [[ -n "${rebuild_set[$p]+x}" ]] && echo "$p"
+    done
+fi

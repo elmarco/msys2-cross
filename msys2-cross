@@ -253,6 +253,8 @@ build_single() {
 # Install packages and commit the result as the working image.
 install_single() {
     local pkg="$1"
+    local force=0
+    [[ "${2:-}" == "--force" ]] && force=1
 
     local pkgfiles
     pkgfiles=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" 2>/dev/null | head -20)
@@ -268,7 +270,7 @@ install_single() {
         local fname="${f##*/}"
         local pname
         pname=$(echo "$fname" | sed 's/-[0-9].*$//')
-        if prun pacman --config "${PACMAN_CONF}" -Qq "${pname}" &>/dev/null; then
+        if [[ "$force" -eq 0 ]] && prun pacman --config "${PACMAN_CONF}" -Qq "${pname}" &>/dev/null; then
             warn "${pname} already installed, skipping"
         else
             to_install+=("$fname")
@@ -377,8 +379,13 @@ cmd_build() {
         checkout_pkg "$pkg"
 
         # Resolve all missing transitive dependencies
-        local missing
-        missing=$(find_all_missing_deps "$pkg")
+        local all_deps
+        all_deps=$(find_all_missing_deps "$pkg")
+
+        # Split into build order and cycle-rebuild list
+        local missing rebuild
+        missing=$(echo "$all_deps" | sed '/^---rebuild---$/,$d')
+        rebuild=$(echo "$all_deps" | sed -n '/^---rebuild---$/,$ { /^---rebuild---$/d; p; }')
 
         if [[ -n "$missing" ]]; then
             local count
@@ -403,6 +410,32 @@ cmd_build() {
                     fi
                 fi
             done
+
+            # Rebuild cycle members so they get full feature support
+            if [[ -n "$rebuild" && ${#failed[@]} -eq 0 ]]; then
+                # Install the target so rebuild deps can link against it
+                install_single "$pkg" || warn "Failed to install ${pkg}"
+
+                local rebuild_count
+                rebuild_count=$(echo "$rebuild" | wc -l)
+                msg "Rebuilding ${rebuild_count} cycle member(s) with full dependencies:"
+                for dep in $rebuild; do echo "  ${dep} (rebuild)"; done
+
+                for dep in $rebuild; do
+                    checkout_pkg "$dep" 2>/dev/null || continue
+                    local dep_src="${_checkout_actual}"
+                    if build_single "$dep_src" "${makepkg_args[@]}"; then
+                        succeeded+=("$dep_src")
+                        install_single "$dep_src" --force || warn "Failed to reinstall ${dep_src}"
+                    else
+                        failed+=("$dep_src")
+                        if [[ "$keep_going" -eq 0 ]]; then
+                            err "Stopping at first failure (use -k to keep going)"
+                            break 2
+                        fi
+                    fi
+                done
+            fi
         else
             # No missing deps — just build the target
             if build_single "$pkg" "${makepkg_args[@]}"; then
