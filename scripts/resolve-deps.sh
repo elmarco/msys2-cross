@@ -67,6 +67,7 @@ get_deps() {
 declare -A visited=()
 declare -A in_stack=()
 declare -A rebuild_set=()
+cycle_pairs=()
 result=()
 
 resolve() {
@@ -81,8 +82,9 @@ resolve() {
         local name="${dep#mingw-w64-ucrt-x86_64-}"
         local child="mingw-w64-$name"
         if [[ -n "${in_stack[$child]+x}" ]]; then
-            echo "  -> circular dependency: ${srcpkg} <-> ${child} (will rebuild ${srcpkg})" >&2
-            rebuild_set[$srcpkg]=1
+            echo "  -> circular dependency: ${srcpkg} <-> ${child} (will rebuild ${child})" >&2
+            cycle_pairs+=("${srcpkg}:${child}")
+            rebuild_set[$child]=1
             continue
         fi
         resolve "$child"
@@ -97,6 +99,30 @@ resolve() {
 }
 
 resolve "$1"
+
+# Fix cycle ordering: DFS post-order puts the descendant (e.g. libxslt)
+# before the ancestor (e.g. libxml2), but the descendant needs the ancestor
+# to build. Move each descendant to right after its ancestor.
+for pair in "${cycle_pairs[@]}"; do
+    IFS=: read -r desc anc <<< "$pair"
+
+    local i_desc=-1 i_anc=-1 i=0
+    for p in "${result[@]}"; do
+        [[ "$p" == "$desc" ]] && i_desc=$i
+        [[ "$p" == "$anc" ]] && i_anc=$i
+        ((i++))
+    done
+
+    if [[ $i_desc -ge 0 && $i_anc -ge 0 && $i_desc -lt $i_anc ]]; then
+        local -a new_result=()
+        for p in "${result[@]}"; do
+            [[ "$p" == "$desc" ]] && continue
+            new_result+=("$p")
+            [[ "$p" == "$anc" ]] && new_result+=("$desc")
+        done
+        result=("${new_result[@]}")
+    fi
+done
 
 for p in "${result[@]}"; do
     echo "$p"
