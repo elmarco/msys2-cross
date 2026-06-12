@@ -105,6 +105,8 @@ done
 if [[ ${#rebuild_set[@]} -gt 0 ]]; then
     echo "---rebuild---"
     for p in "${result[@]}"; do
-        [[ -n "${rebuild_set[$p]+x}" ]] && echo "$p"
+        if [[ -n "${rebuild_set[$p]+x}" ]]; then
+            echo "$p"
+        fi
     done
 fi
