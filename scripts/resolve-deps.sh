@@ -65,20 +65,28 @@ get_deps() {
 }
 
 declare -A visited=()
+declare -A in_stack=()
 result=()
 
 resolve() {
     local srcpkg=$1
     [[ -n "${visited[$srcpkg]+x}" ]] && return
     visited[$srcpkg]=1
+    in_stack[$srcpkg]=1
 
     local deps=$(get_deps "$srcpkg" | sort -u)
     for dep in $deps; do
         pacman --config $PACMAN_CONF -Qq "$dep" &>/dev/null && continue
         local name="${dep#mingw-w64-ucrt-x86_64-}"
         local child="mingw-w64-$name"
+        if [[ -n "${in_stack[$child]+x}" ]]; then
+            echo "  -> circular dependency: ${srcpkg} <-> ${child} (building with --nodeps)" >&2
+            continue
+        fi
         resolve "$child"
     done
+
+    unset 'in_stack[$srcpkg]'
 
     local ipkg="mingw-w64-ucrt-x86_64-${srcpkg#mingw-w64-}"
     if ! pacman --config $PACMAN_CONF -Qq "$ipkg" &>/dev/null; then

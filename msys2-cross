@@ -348,9 +348,11 @@ cmd_setup() {
 cmd_build() {
     local packages=()
     local makepkg_args=()
+    local keep_going=0
 
     for arg in "$@"; do
         case "$arg" in
+            -k|--keep-going) keep_going=1 ;;
             -*) makepkg_args+=("$arg") ;;
             *)  packages+=("$arg") ;;
         esac
@@ -361,7 +363,7 @@ cmd_build() {
         exit 1
     fi
 
-    makepkg_args+=("--skipchecksums" "-f")
+    makepkg_args+=("--skipchecksums" "--nodeps" "-f")
 
     ensure_mingw_packages
 
@@ -385,7 +387,7 @@ cmd_build() {
             for dep in $missing; do echo "  ${dep}"; done
 
             for dep in $missing; do
-                checkout_pkg "$dep" 2>/dev/null || { warn "Cannot find ${dep}, skipping"; failed+=("$dep"); continue; }
+                checkout_pkg "$dep" 2>/dev/null || { warn "Cannot find ${dep}, skipping"; failed+=("$dep"); [[ "$keep_going" -eq 1 ]] && continue || break 2; }
                 local dep_src="${_checkout_actual}"
                 if build_single "$dep_src" "${makepkg_args[@]}"; then
                     succeeded+=("$dep_src")
@@ -395,6 +397,10 @@ cmd_build() {
                     fi
                 else
                     failed+=("$dep_src")
+                    if [[ "$keep_going" -eq 0 ]]; then
+                        err "Stopping at first failure (use -k to keep going)"
+                        break 2
+                    fi
                 fi
             done
         else
