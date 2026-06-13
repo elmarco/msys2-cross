@@ -39,6 +39,7 @@ Commands:
   install <pkg> [...]   Install built packages into the working image
   deps <pkg>            Show missing dependencies for a package
   srpm <pkg> [outdir]   Generate an SRPM for a MINGW package
+  mock-build            Build the msys2-cross RPM via mock
   shell [--network]     Open an interactive shell (--network enables network)
   run [--network] <cmd...>  Run a command in the build environment
   list                  List installed packages in the sysroot
@@ -551,6 +552,60 @@ cmd_rebuild() {
     msg "Rebuild complete."
 }
 
+cmd_mock_build() {
+    local mock_args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            *) mock_args+=("$1"); shift ;;
+        esac
+    done
+
+    # 1. Download toolchain sources
+    if [[ ! -d "${SCRIPT_DIR}/sources" ]] || [[ -z "$(ls -A "${SCRIPT_DIR}/sources" 2>/dev/null)" ]]; then
+        msg "Downloading toolchain sources..."
+        bash "${SCRIPT_DIR}/scripts/download-sources.sh"
+    else
+        msg "Toolchain sources already downloaded"
+    fi
+
+    # 2. Create scripts tarball + link sources
+    msg "Preparing RPM sources..."
+    bash "${SCRIPT_DIR}/scripts/make-srpm-sources.sh"
+    local sourcedir="${SCRIPT_DIR}/rpmbuild-sources"
+
+    # 3. Build SRPM
+    msg "Building SRPM..."
+    local srpmdir
+    srpmdir=$(mktemp -d)
+    rpmbuild -bs "${SCRIPT_DIR}/msys2-cross.spec" \
+        --define "_sourcedir ${sourcedir}" \
+        --define "_srcrpmdir ${srpmdir}"
+
+    local srpm
+    srpm=$(ls "${srpmdir}"/*.src.rpm 2>/dev/null | head -1)
+    if [[ -z "$srpm" ]]; then
+        err "SRPM build failed"
+        rm -rf "$srpmdir"
+        exit 1
+    fi
+    msg "SRPM: ${srpm}"
+
+    # 4. Rebuild in mock
+    msg "Running mock --rebuild (this takes 30-60 minutes)..."
+    mock --rebuild "$srpm" "${mock_args[@]}"
+    local rc=$?
+
+    rm -rf "$srpmdir"
+
+    if [[ $rc -eq 0 ]]; then
+        msg "Mock build succeeded!"
+        msg "RPMs available in /var/lib/mock/*/result/"
+    else
+        err "Mock build failed (exit code ${rc})"
+    fi
+    return $rc
+}
+
 cmd_check_update() {
     local github_raw="https://raw.githubusercontent.com/msys2/MINGW-packages/master"
     local rc=0
@@ -662,7 +717,8 @@ case "$1" in
     destroy)  shift; cmd_destroy "$@" ;;
     rebuild)      shift; cmd_rebuild "$@" ;;
     check-update) shift; cmd_check_update "$@" ;;
-    srpm)     shift; bash "${SCRIPT_DIR}/scripts/make-mingw-srpm.sh" "$@" ;;
+    srpm)       shift; bash "${SCRIPT_DIR}/scripts/make-mingw-srpm.sh" "$@" ;;
+    mock-build) shift; cmd_mock_build "$@" ;;
     help|-h|--help) usage 0 ;;
     *)        err "Unknown command: $1"; usage 1 ;;
 esac
