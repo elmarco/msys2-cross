@@ -68,6 +68,7 @@ chmod +x "${_ROOT}"/opt/msys2-cross/config/makepkg-mingw
 # Minimal makepkg config for building repo packages (not cross-compilation).
 # The full makepkg_mingw.conf references cross-tools that may not be installed yet.
 _MAKEPKG_CONF=$(mktemp)
+chmod 644 "${_MAKEPKG_CONF}"
 cat > "${_MAKEPKG_CONF}" <<'MKCFG'
 CARCH="x86_64"
 CHOST="x86_64-w64-mingw32"

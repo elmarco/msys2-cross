@@ -2,23 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="${SCRIPT_DIR}"
+source "${SCRIPT_DIR}/scripts/lib-mingw-pkg.sh"
+
 BOOTSTRAP_IMAGE="msys2-cross"
 WORK_IMAGE="msys2-cross-work"
-MINGW_PACKAGES_DIR="${SCRIPT_DIR}/MINGW-packages"
 PACMAN_CONF="/opt/msys2-cross/config/pacman-mingw.conf"
 LOG_DIR="${SCRIPT_DIR}/logs"
-DOWNLOAD_CONF="${SCRIPT_DIR}/config/makepkg-download.conf"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-msg()  { echo -e "${GREEN}==>${NC} ${BOLD}$1${NC}"; }
-warn() { echo -e "${YELLOW}==> WARNING:${NC} ${BOLD}$1${NC}"; }
-err()  { echo -e "${RED}==> ERROR:${NC} ${BOLD}$1${NC}" >&2; }
 
 build_image() {
     TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
@@ -48,6 +38,7 @@ Commands:
   build <pkg> [...]     Build one or more MINGW packages (builds missing deps)
   install <pkg> [...]   Install built packages into the working image
   deps <pkg>            Show missing dependencies for a package
+  srpm <pkg> [outdir]   Generate an SRPM for a MINGW package
   shell [--network]     Open an interactive shell (--network enables network)
   run [--network] <cmd...>  Run a command in the build environment
   list                  List installed packages in the sysroot
@@ -63,63 +54,6 @@ Package names can omit the "mingw-w64-" prefix:
   msys2-cross build libpng    →  builds mingw-w64-libpng
 EOF
     exit "${1:-0}"
-}
-
-# Normalize package name: "libpng" → "mingw-w64-libpng"
-normalize_pkg() {
-    local pkg="$1"
-    if [[ "$pkg" != mingw-w64-* ]]; then
-        pkg="mingw-w64-${pkg}"
-    fi
-    echo "$pkg"
-}
-
-# Ensure MINGW-packages is cloned
-ensure_mingw_packages() {
-    if [[ ! -d "${MINGW_PACKAGES_DIR}/.git" ]]; then
-        msg "Cloning MINGW-packages (sparse)..."
-        git clone --filter=blob:none --sparse \
-            https://github.com/msys2/MINGW-packages.git \
-            "${MINGW_PACKAGES_DIR}"
-    fi
-}
-
-# Sparse checkout a package. Handles split packages by:
-# 1. Direct directory lookup
-# 2. Suffix stripping (e.g., mingw-w64-gettext-runtime → mingw-w64-gettext)
-# 3. Searching checked-out PKGBUILDs for pkgname=() that provides it
-checkout_pkg() {
-    local pkg="$1"
-    ensure_mingw_packages
-    cd "${MINGW_PACKAGES_DIR}"
-    if [[ ! -d "${pkg}" ]]; then
-        git sparse-checkout add "${pkg}" 2>/dev/null
-    fi
-    if [[ ! -d "${pkg}" ]]; then
-        # Try common split-package suffixes
-        for suffix in -runtime -tools -libs -devel -git; do
-            local base="${pkg%${suffix}}"
-            if [[ "$base" != "$pkg" ]]; then
-                git sparse-checkout add "${base}" 2>/dev/null
-                if [[ -d "${base}" ]]; then
-                    _checkout_actual="${base}"
-                    return 0
-                fi
-            fi
-        done
-        # Search checked-out PKGBUILDs for split packages that provide this name
-        local short="${pkg#mingw-w64-}"
-        local provider
-        provider=$(grep -l "pkgname=.*${short}" "${MINGW_PACKAGES_DIR}"/mingw-w64-*/PKGBUILD 2>/dev/null \
-            | head -1 | xargs -r dirname | xargs -r basename)
-        if [[ -n "$provider" && -d "${MINGW_PACKAGES_DIR}/${provider}" ]]; then
-            _checkout_actual="${provider}"
-            return 0
-        fi
-        err "Package ${pkg} not found in MINGW-packages"
-        return 1
-    fi
-    _checkout_actual="${pkg}"
 }
 
 # Ensure bootstrap image exists
@@ -189,45 +123,6 @@ find_all_missing_deps() {
     done
 
     prun bash /opt/msys2-cross/scripts/resolve-deps.sh "${root_pkg}" 2>/dev/null
-}
-
-# Download sources for a single package (runs on host, no container needed)
-download_sources() {
-    local pkg="$1"
-    msg "Downloading sources for ${pkg}..."
-    (
-        export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
-        export MINGW_PREFIX=/ucrt64
-        export MINGW_CHOST=x86_64-w64-mingw32
-        export MSYSTEM=UCRT64
-        cd "${MINGW_PACKAGES_DIR}/${pkg}"
-        makepkg --verifysource --skippgpcheck \
-            --config "${DOWNLOAD_CONF}" --nodeps -f
-    )
-    fetch_cargo_deps "$pkg"
-}
-
-# Pre-fetch Rust crate dependencies so offline container builds can find them.
-fetch_cargo_deps() {
-    local pkg="$1"
-    local pkgdir="${MINGW_PACKAGES_DIR}/${pkg}"
-
-    for tarball in "${pkgdir}"/*.tar.{xz,gz,bz2,zst}; do
-        [[ -f "$tarball" ]] || continue
-        bsdtar -tf "$tarball" 2>/dev/null | grep -q '^[^/]*/Cargo\.lock$' || continue
-
-        msg "Fetching Rust crates for ${pkg}..."
-        local tmpdir
-        tmpdir=$(mktemp -d)
-        bsdtar -xf "$tarball" -C "$tmpdir" 2>/dev/null || { rm -rf "$tmpdir"; continue; }
-        local cargo_toml
-        cargo_toml=$(find "$tmpdir" -maxdepth 2 -name Cargo.toml -print -quit)
-        if [[ -n "$cargo_toml" ]]; then
-            cargo fetch --manifest-path "$cargo_toml" --locked 2>&1 | sed 's/^/  /' || warn "cargo fetch failed (crates may be missing at build time)"
-        fi
-        rm -rf "$tmpdir"
-        return
-    done
 }
 
 cmd_download() {
@@ -767,6 +662,7 @@ case "$1" in
     destroy)  shift; cmd_destroy "$@" ;;
     rebuild)      shift; cmd_rebuild "$@" ;;
     check-update) shift; cmd_check_update "$@" ;;
+    srpm)     shift; bash "${SCRIPT_DIR}/scripts/make-mingw-srpm.sh" "$@" ;;
     help|-h|--help) usage 0 ;;
     *)        err "Unknown command: $1"; usage 1 ;;
 esac
