@@ -25,6 +25,7 @@ build_image() {
 }
 
 # Common bind mounts for all container runs
+CARGO_REGISTRY="${CARGO_HOME:-$HOME/.cargo}/registry"
 VOLUMES=(
     -v "${MINGW_PACKAGES_DIR}:/src"
     -v "${SCRIPT_DIR}/patches:/opt/msys2-cross/patches:ro"
@@ -32,6 +33,9 @@ VOLUMES=(
     -v "${SCRIPT_DIR}/wrappers:/opt/msys2-cross/wrappers:ro"
     -v "${SCRIPT_DIR}/scripts:/opt/msys2-cross/scripts:ro"
 )
+if [[ -d "${CARGO_REGISTRY}" ]]; then
+    VOLUMES+=(-v "${CARGO_REGISTRY}:/home/builduser/.cargo/registry:ro")
+fi
 
 usage() {
     cat <<'EOF'
@@ -200,6 +204,30 @@ download_sources() {
         makepkg --verifysource --skippgpcheck \
             --config "${DOWNLOAD_CONF}" --nodeps -f
     )
+    fetch_cargo_deps "$pkg"
+}
+
+# Pre-fetch Rust crate dependencies so offline container builds can find them.
+fetch_cargo_deps() {
+    local pkg="$1"
+    local pkgdir="${MINGW_PACKAGES_DIR}/${pkg}"
+
+    for tarball in "${pkgdir}"/*.tar.{xz,gz,bz2,zst}; do
+        [[ -f "$tarball" ]] || continue
+        bsdtar -tf "$tarball" 2>/dev/null | grep -q '^[^/]*/Cargo\.lock$' || continue
+
+        msg "Fetching Rust crates for ${pkg}..."
+        local tmpdir
+        tmpdir=$(mktemp -d)
+        bsdtar -xf "$tarball" -C "$tmpdir" 2>/dev/null || { rm -rf "$tmpdir"; continue; }
+        local cargo_toml
+        cargo_toml=$(find "$tmpdir" -maxdepth 2 -name Cargo.toml -print -quit)
+        if [[ -n "$cargo_toml" ]]; then
+            cargo fetch --manifest-path "$cargo_toml" --locked 2>&1 | sed 's/^/  /' || warn "cargo fetch failed (crates may be missing at build time)"
+        fi
+        rm -rf "$tmpdir"
+        return
+    done
 }
 
 cmd_download() {

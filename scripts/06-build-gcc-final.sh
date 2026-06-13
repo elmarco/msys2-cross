@@ -14,6 +14,9 @@ cd "${BUILD_DIR}/gcc-final"
 "${SRC_DIR}/gcc-${GCC_VERSION}/configure" \
     --target="${TARGET}" \
     --prefix=/usr \
+    --with-sysroot="/usr/${TARGET}" \
+    --with-native-system-header-dir=/include \
+    ${DESTDIR:+--with-build-sysroot="${DESTDIR}/usr/${TARGET}"} \
     --enable-languages=c,c++,lto \
     --enable-threads=posix \
     --enable-shared \
@@ -44,6 +47,18 @@ cd "${BUILD_DIR}/gcc-final"
     --with-pkgversion="msys2-cross cross-compiler" \
     --with-boot-ldflags="-static-libstdc++"
 
+if [[ -n "${DESTDIR}" ]]; then
+    # GCC's generated Makefile has FLAGS_FOR_TARGET with make-variable paths
+    # like ${prefix}/${target} and $(build_tooldir) that resolve to the final
+    # install prefix (/usr/x86_64-w64-mingw32) — which doesn't exist during a
+    # DESTDIR build. Rewrite these variables' definitions so paths point into
+    # the staging directory instead.
+    _dt="${DESTDIR}/usr/${TARGET}"
+    sed -i 's|^build_tooldir = .*|build_tooldir = '"${_dt}"'|
+            s|^tooldir = .*|tooldir = '"${_dt}"'|' Makefile
+    sed -i '/^FLAGS_FOR_TARGET/s|\${prefix}/\${target}|'"${_dt}"'|g
+            /^FLAGS_FOR_TARGET/s|\${prefix}/mingw|'"${DESTDIR}"'/usr/mingw|g' Makefile
+fi
 make -j"${JOBS}"
 make install DESTDIR="${DESTDIR}"
 

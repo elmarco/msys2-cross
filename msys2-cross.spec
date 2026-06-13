@@ -143,6 +143,11 @@ cp %{SOURCE3} sources/
 
 # =========================================================================
 %build
+# GCC/binutils manage their own flags — Fedora's hardened CFLAGS/CXXFLAGS
+# (e.g. -Werror=format-security, annobin specs) clash with GCC's internal
+# -Werror and break the bootstrap build.
+unset CFLAGS CXXFLAGS FFLAGS FCFLAGS LDFLAGS RUSTFLAGS CC CXX AR NM RANLIB
+
 # Point build scripts at our working directories
 export SRC_DIR=%{_builddir}/%{name}-%{version}/src
 export BUILD_DIR=%{_builddir}/%{name}-%{version}/build
@@ -242,23 +247,18 @@ export PATH="/opt/msys2-cross/wrappers:/opt/msys2-cross/config:${PATH}"
 EOF
 
 # ---- Pacman setup ----
-# Run script 08 to create repo DB, dummy packages, and initialize pacman.
-# This runs as root in %install, which is what the script expects.
-export DESTDIR=
+# Run script 08 with INSTALL_ROOT=buildroot so it creates repo DB, dummy
+# packages, and pacman state directly in the buildroot (works as non-root).
+# Uses INSTALL_ROOT instead of DESTDIR to avoid polluting the environment
+# from common.sh (which adds DESTDIR/usr/bin to PATH etc.).
+export INSTALL_ROOT=%{buildroot}
 bash scripts/08-setup-pacman.sh
-
-# Collect pacman state into the buildroot
-mkdir -p %{buildroot}/var/lib/pacman
-cp -a /var/lib/pacman/mingw %{buildroot}/var/lib/pacman/
-mkdir -p %{buildroot}/var/cache/pacman
-cp -a /var/cache/pacman/mingw %{buildroot}/var/cache/pacman/
-cp -a /opt/msys2-cross/repo %{buildroot}/opt/msys2-cross/
 
 # =========================================================================
 %files
 /ucrt64
 /usr/bin/%{target}-*
-/usr/lib64/gcc/%{target}
+/usr/lib*/gcc/%{target}
 /usr/libexec/gcc/%{target}
 /usr/%{target}
 /usr/local/bin/bsdtar

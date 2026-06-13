@@ -14,6 +14,9 @@ cd "${BUILD_DIR}/gcc-bootstrap"
 "${SRC_DIR}/gcc-${GCC_VERSION}/configure" \
     --target="${TARGET}" \
     --prefix=/usr \
+    --with-sysroot="/usr/${TARGET}" \
+    --with-native-system-header-dir=/include \
+    ${DESTDIR:+--with-build-sysroot="${DESTDIR}/usr/${TARGET}"} \
     --enable-languages=c \
     --disable-threads \
     --disable-shared \

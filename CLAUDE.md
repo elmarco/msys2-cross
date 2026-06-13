@@ -1,4 +1,4 @@
-# MSYS2 Linux Bootstrap
+# MSYS2 Linux Cross-Compilation Toolchain
 
 ## Goal
 
@@ -6,26 +6,52 @@ Build Windows (PE) binaries from Linux/Fedora by reusing the MSYS2 MINGW-package
 
 ## Design principles
 
-- **Offline builds**: The container must not require network access at runtime. All sources (toolchain tarballs) are pre-downloaded on the host. Run `scripts/download-sources.sh` before `podman build`.
+- **Offline builds**: The container runs with `--network=none`. All sources are pre-downloaded on the host: toolchain tarballs via `scripts/download-sources.sh`, package sources via `msys2-cross download`, and Rust crates auto-fetched into `~/.cargo/registry/` (bind-mounted read-only into the container).
 - **No PKGBUILD modifications on disk**: `makepkg-mingw` works on a copy of PKGBUILD (`cp PKGBUILD PKGBUILD.orig`, restore after build). Patches must not corrupt the original. Use `sed` replacements that preserve array structure — never delete lines from the middle of bash arrays.
 - **Bind-mount workflow**: Users clone MINGW-packages on the host and mount into the container. The container should never clone repos itself.
 
 ## How it works
 
-A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from source on Fedora Linux, along with a Rust cross-compilation toolchain (std library compiled from source for `x86_64-pc-windows-gnu`). Then `makepkg-mingw` is provided so MSYS2 MINGW-packages PKGBUILDs can be built on Linux without modification.
+A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from source on Fedora Linux, along with a Rust cross-compilation toolchain (std library compiled from source for `x86_64-pc-windows-gnu`). Base libraries (libiconv, gettext, zlib, etc.) are pre-built during the container build. Then `makepkg-mingw` is provided so MSYS2 MINGW-packages PKGBUILDs can be built on Linux without modification.
+
+The `msys2-cross` CLI manages two container images:
+- **Bootstrap image**: the toolchain + base libraries (built once, ~30-60 min)
+- **Working image**: bootstrap + user-installed packages (committed after each `install`)
 
 ## Project layout
 
 ```
-scripts/          Bootstrap stages (00-08), run sequentially in the Containerfile
-scripts/download-sources.sh  Pre-download all sources before container build
-config/           makepkg-mingw, makepkg_mingw.conf, pacman config, cmake/meson toolchain files
-wrappers/         mingw-cmake, mingw-meson, mingw-pkg-config, cygpath shim
-packages/         Repackaging PKGBUILDs that wrap bootstrap artifacts as pacman packages
-patches/          Per-package .sh scripts for cross-compilation fixes
-sources/          Pre-downloaded tarballs (gitignored, populated by download-sources.sh)
-tests/            Smoke tests (run inside the container)
-Containerfile     Multi-stage: toolchain-builder → msys2-cross
+msys2-cross                  CLI tool: setup, build, install, deps, shell, ...
+msys2-cross.spec             RPM spec file (non-container builds)
+Containerfile                Multi-stage: toolchain-builder → msys2-cross
+scripts/
+  download-sources.sh        Pre-download all toolchain tarballs
+  common.sh                  Version pins and shared variables
+  00-install-host-deps.sh    Fedora packages (gcc, cmake, meson, ...)
+  00-install-extra-deps.sh   Additional host dependencies
+  01–06-build-*.sh           Cross-toolchain build stages (binutils → GCC)
+  07-build-rust-cross.sh     Rust std for x86_64-pc-windows-gnu
+  08-setup-pacman.sh         Package toolchain as pacman packages + dummy packages
+  09-build-base-libs.sh      Base libraries (libiconv, gettext, zlib, ...)
+  resolve-deps.sh            Dependency resolver with cycle detection (runs in container)
+  make-srpm-sources.sh       RPM source tarball helper
+config/
+  makepkg-mingw              Build driver (auto-rewrites PKGBUILDs for cross-compilation)
+  makepkg_mingw.conf         makepkg config (cross-strip, compression, PACMAN wrapper)
+  makepkg-download.conf      makepkg config for host-side source downloads
+  pacman-mingw.conf          pacman config (separate DB at /var/lib/pacman/mingw/)
+  dummy-packages.list        ~120 host tools registered as dummy pacman packages
+  cross-file.meson           Meson cross-compilation file
+  native-file.meson          Meson native file
+  toolchain.cmake            CMake toolchain file
+  cargo-cross.toml           Cargo config (cross-linker + offline mode)
+  mingw-env.sh               Environment variables (MINGW_PREFIX, MINGW_CHOST, etc.)
+wrappers/                    mingw-cmake, mingw-meson, mingw-pkg-config, cygpath shim
+packages/                    Pacman PKGBUILDs wrapping bootstrap artifacts
+patches/                     Per-package .sh scripts for cross-compilation fixes (~37 files)
+sources/                     Pre-downloaded tarballs (gitignored)
+tests/                       Smoke tests (gcc, cmake, meson, autotools, rust, zlib)
+logs/                        Build logs (auto-created, gitignored)
 ```
 
 ## Key design decisions
@@ -35,7 +61,9 @@ Containerfile     Multi-stage: toolchain-builder → msys2-cross
 - **Cross-compiler in /usr/bin/**: Standard `x86_64-w64-mingw32-gcc` naming
 - **Symlinks /usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}**: GCC sysroot discovery (can't replace the dir since binutils creates `/usr/x86_64-w64-mingw32/bin/`)
 - **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf
-- **Dummy packages for host-provided tools**: Build tools (autotools, meson, cmake, python, etc.) are provided by Fedora, not cross-compiled. Dummy pacman packages satisfy these MINGW dependencies. `makepkg_mingw.conf` sets `PACMAN` to a wrapper that checks the mingw pacman DB
+- **Dummy packages for host-provided tools**: Build tools (autotools, meson, cmake, python, etc.) are provided by Fedora, not cross-compiled. Dummy pacman packages satisfy these MINGW dependencies. Listed in `config/dummy-packages.list`.
+- **Cargo offline mode**: `config/cargo-cross.toml` sets `[net] offline = true`. Host cargo registry is bind-mounted read-only. Crates are auto-fetched during `msys2-cross download`.
+- **Circular dependency handling**: `resolve-deps.sh` detects cycles (e.g., libwebp ↔ libtiff), builds in the right order, then rebuilds the cycle ancestor with full features. Uses `--nodeps` in makepkg to bypass dependency checking.
 - **Wine is optional**: Only needed for ~5-10% of packages that run .exe at build time
 
 ## Version pins
@@ -49,19 +77,16 @@ Matched to MSYS2 MINGW-packages as of 2026-06-03 — update in `scripts/common.s
 ## Building
 
 ```sh
-# 1. Pre-download sources (run once)
-./scripts/download-sources.sh
+# One-time setup (downloads sources, builds container, clones MINGW-packages)
+./msys2-cross setup
 
-# 2. Build the container
-podman build -t msys2-cross .
+# Build a package (auto-resolves dependencies)
+./msys2-cross build gtk4
 
-# 3. Clone MINGW-packages on host (run once)
-git clone --filter=blob:none --sparse https://github.com/msys2/MINGW-packages.git ~/src/MINGW-packages
-cd ~/src/MINGW-packages && git sparse-checkout add mingw-w64-glib2
-
-# 4. Build a package (offline, bind-mounted)
-podman run --rm -v ~/src/MINGW-packages:/src msys2-cross \
-    bash -c "cd /src/mingw-w64-glib2 && makepkg-mingw --skipchecksums --skippgpcheck --nocheck -f"
+# Or step by step:
+./msys2-cross download libpng
+./msys2-cross build libpng
+./msys2-cross install libpng
 ```
 
 First build takes 30-60 min (GCC compilation). The multi-stage Containerfile caches the toolchain layer.
@@ -70,9 +95,11 @@ First build takes 30-60 min (GCC compilation). The multi-stage Containerfile cac
 
 Run smoke tests inside the container:
 ```sh
-podman run msys2-cross bash /opt/msys2-cross/tests/test-zlib.sh
-podman run msys2-cross bash /opt/msys2-cross/tests/test-cmake-project.sh
-podman run msys2-cross bash /opt/msys2-cross/tests/test-meson-project.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-gcc.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-cmake-project.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-meson-project.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-autotools.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-rust.sh
 ```
 
 ## Known issues to watch for
@@ -83,6 +110,7 @@ podman run msys2-cross bash /opt/msys2-cross/tests/test-meson-project.sh
 - **Container UID mapping**: Running with `-v host:container:rw` may create files owned by container UIDs (100999). Use `podman unshare chown` to fix, or mount `:ro` when possible.
 - **Strip tool**: `makepkg_mingw.conf` sets `STRIP=/usr/bin/x86_64-w64-mingw32-strip`. If PE binaries come out corrupted, verify this is being picked up by makepkg.
 - **Fedora uses lib64**: GCC installs to `/usr/lib64/gcc/` not `/usr/lib/gcc/`. The Containerfile accounts for this.
+- **Rust packages need crates**: Packages with `Cargo.lock` (e.g., librsvg) need their crates pre-fetched. `msys2-cross download` does this automatically. If building manually, run `cargo fetch` on the host first.
 
 ## Writing patches (patches/*.sh)
 
@@ -91,6 +119,7 @@ Per-package shell scripts that modify PKGBUILD via sed before building. Rules:
 - Patches run BEFORE the generic auto-rewrites in makepkg-mingw
 - Name: `<pkgbase>.sh` (e.g., `mingw-w64-glib2.sh`)
 - The PKGBUILD is a temporary copy; original is always restored after build
+- For Rust packages: `sed -i '/cargo update/d; /cargo fetch/d'` to skip network-dependent commands
 
 ## Adding new toolchain versions
 

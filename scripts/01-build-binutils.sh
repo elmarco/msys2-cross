@@ -14,6 +14,7 @@ cd "${BUILD_DIR}/binutils"
 "${SRC_DIR}/binutils-${BINUTILS_VERSION}/configure" \
     --target="${TARGET}" \
     --prefix=/usr \
+    --with-sysroot="/usr/${TARGET}" \
     --disable-multilib \
     --disable-nls \
     --disable-shared \
