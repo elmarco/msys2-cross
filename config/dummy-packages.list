@@ -29,6 +29,7 @@ mingw-w64-ucrt-x86_64-doxygen
 # mingw-w64-ucrt-x86_64-gettext-tools — built by 09-build-base-libs.sh
 mingw-w64-ucrt-x86_64-gi-docgen
 mingw-w64-ucrt-x86_64-git
+mingw-w64-ucrt-x86_64-gperf
 mingw-w64-ucrt-x86_64-graphviz
 mingw-w64-ucrt-x86_64-gtk-doc
 mingw-w64-ucrt-x86_64-gtk-update-icon-cache
@@ -38,6 +39,7 @@ mingw-w64-ucrt-x86_64-make
 mingw-w64-ucrt-x86_64-meson-python
 mingw-w64-ucrt-x86_64-nasm
 mingw-w64-ucrt-x86_64-ninja
+mingw-w64-ucrt-x86_64-ragel
 mingw-w64-ucrt-x86_64-nodejs
 mingw-w64-ucrt-x86_64-perl
 mingw-w64-ucrt-x86_64-ruby

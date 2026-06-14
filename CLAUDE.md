@@ -33,8 +33,10 @@ scripts/
   07-build-rust-cross.sh     Rust std for x86_64-pc-windows-gnu
   08-setup-pacman.sh         Package toolchain as pacman packages + dummy packages
   09-build-base-libs.sh      Base libraries (libiconv, gettext, zlib, ...)
+  lib-mingw-pkg.sh           Shared helpers (normalize_pkg, checkout_pkg, parse_pkgbuild, ...)
   resolve-deps.sh            Dependency resolver with cycle detection (runs in container)
   make-srpm-sources.sh       RPM source tarball helper
+  make-mingw-srpm.sh         Generate SRPM for any MINGW package
 config/
   makepkg-mingw              Build driver (auto-rewrites PKGBUILDs for cross-compilation)
   makepkg_mingw.conf         makepkg config (cross-strip, compression, PACMAN wrapper)
@@ -111,15 +113,28 @@ Run smoke tests inside the container:
 - **Strip tool**: `makepkg_mingw.conf` sets `STRIP=/usr/bin/x86_64-w64-mingw32-strip`. If PE binaries come out corrupted, verify this is being picked up by makepkg.
 - **Fedora uses lib64**: GCC installs to `/usr/lib64/gcc/` not `/usr/lib/gcc/`. The Containerfile accounts for this.
 - **Rust packages need crates**: Packages with `Cargo.lock` (e.g., librsvg) need their crates pre-fetched. `msys2-cross download` does this automatically. If building manually, run `cargo fetch` on the host first.
+- **gobject-introspection**: `g-ir-scanner` executes compiled `.exe` to generate GIR data. This fails in cross-compilation without Wine. Most packages need a patch to disable introspection (see "Writing patches" below). Symptoms: `Failed running .../sanity_check.exe` or `GCab-1.0.gir not found`.
+- **Meson implicit setup**: Some PKGBUILDs call `${MINGW_PREFIX}/bin/meson` without the `setup` subcommand (old-style). `makepkg-mingw` rewrites all bare meson references to the `mingw-meson` wrapper, which detects the implicit setup and injects `--cross-file`. If a build says `Build type: native build`, the wrapper isn't being used.
+- **Build tools as dummy packages**: Host-only tools like `gperf`, `ragel`, `nasm` that generate source code should be in `dummy-packages.list`, not cross-compiled. If a BuildRequires for `mingw-w64-ucrt-x86_64-<tool>` appears in a generated spec and that tool is installed on the host, it's probably missing from the dummy list.
 
 ## Writing patches (patches/*.sh)
 
 Per-package shell scripts that modify PKGBUILD via sed before building. Rules:
 - **Never delete lines** from bash arrays — use `sed 's/pattern/replacement/'` instead
+- Patches run via `source` BEFORE the PKGBUILD is sourced — **PKGBUILD variables like `_realname`, `pkgver`, `pkgname` are NOT available**. Use only literal strings in sed patterns.
 - Patches run BEFORE the generic auto-rewrites in makepkg-mingw
 - Name: `<pkgbase>.sh` (e.g., `mingw-w64-glib2.sh`)
 - The PKGBUILD is a temporary copy; original is always restored after build
 - For Rust packages: `sed -i '/cargo update/d; /cargo fetch/d'` to skip network-dependent commands
+
+### Common cross-compilation patches
+
+- **Disable gobject-introspection**: `g-ir-scanner` tries to execute compiled `.exe` files, which fails without Wine. Disable for all packages that use it:
+  - Meson `feature` options: `sed -i 's/--auto-features=enabled/--auto-features=enabled -Dintrospection=disabled/' PKGBUILD`
+  - Meson `boolean` options: use `-Dintrospection=false` (not `disabled` — **meson boolean options take `true`/`false`, feature options take `enabled`/`disabled`/`auto`**)
+  - Autotools: `sed -i 's/--enable-introspection/--disable-introspection/' PKGBUILD`
+  - Also disable `-Dvapi=false` when present (vapi generation depends on GIR files)
+- **When no `--auto-features` to hook into**: append to `--prefix` instead: `sed -i 's|--prefix="${MINGW_PREFIX}"|--prefix="${MINGW_PREFIX}" -Dintrospection=false|' PKGBUILD`
 
 ## Adding new toolchain versions
 

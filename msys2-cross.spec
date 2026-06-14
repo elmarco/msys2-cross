@@ -12,6 +12,7 @@ Release:        1%{?dist}
 Summary:        UCRT64 cross-compilation toolchain for building Windows binaries
 
 License:        GPL-3.0-or-later AND LGPL-2.1-or-later AND ZPL-2.1 AND BSD-2-Clause
+# TODO: update to actual project URL
 URL:            https://github.com/user/msys2-cross
 ExclusiveArch:  x86_64
 
@@ -141,6 +142,15 @@ cp %{SOURCE1} sources/
 cp %{SOURCE2} sources/
 cp %{SOURCE3} sources/
 
+# Extract license texts from upstream sources
+mkdir -p licenses
+tar xf %{SOURCE0} --strip-components=1 -C licenses/ \
+    gcc-%{gcc_version}/COPYING3 \
+    gcc-%{gcc_version}/COPYING.LIB \
+    gcc-%{gcc_version}/COPYING3.LIB
+tar xf %{SOURCE2} --wildcards --strip-components=1 -C licenses/ '*/COPYING'
+mv licenses/COPYING licenses/COPYING.mingw-w64
+
 # =========================================================================
 %build
 # GCC/binutils manage their own flags — Fedora's hardened CFLAGS/CXXFLAGS
@@ -172,10 +182,10 @@ bash scripts/07-build-rust-cross.sh
 STAGING=%{_builddir}/%{name}-%{version}/staging
 
 # ---- Cross-compiler binaries ----
-mkdir -p %{buildroot}/usr/bin
+mkdir -p %{buildroot}%{_bindir}
 for f in "${STAGING}"/usr/bin/%{target}-*; do
     [ -f "$f" ] || continue
-    install -Dm755 "$f" "%{buildroot}/usr/bin/$(basename "$f")"
+    install -Dm755 "$f" "%{buildroot}%{_bindir}/$(basename "$f")"
 done
 
 # ---- GCC internal libraries and tools ----
@@ -187,8 +197,8 @@ for dir in lib64 lib; do
     fi
 done
 if [ -d "${STAGING}/usr/libexec/gcc/%{target}" ]; then
-    mkdir -p %{buildroot}/usr/libexec/gcc
-    cp -a "${STAGING}/usr/libexec/gcc/%{target}" %{buildroot}/usr/libexec/gcc/
+    mkdir -p %{buildroot}%{_libexecdir}/gcc
+    cp -a "${STAGING}/usr/libexec/gcc/%{target}" %{buildroot}%{_libexecdir}/gcc/
 fi
 
 # ---- Sysroot ----
@@ -196,13 +206,13 @@ mkdir -p %{buildroot}/ucrt64
 cp -a "${STAGING}"/ucrt64/* %{buildroot}/ucrt64/
 
 # GCC sysroot discovery symlinks
-mkdir -p %{buildroot}/usr/%{target}
+mkdir -p %{buildroot}%{_prefix}/%{target}
 # Preserve binutils' bin/ directory if present
 if [ -d "${STAGING}/usr/%{target}/bin" ]; then
-    cp -a "${STAGING}/usr/%{target}/bin" "%{buildroot}/usr/%{target}/"
+    cp -a "${STAGING}/usr/%{target}/bin" "%{buildroot}%{_prefix}/%{target}/"
 fi
-ln -sfn /ucrt64/include %{buildroot}/usr/%{target}/include
-ln -sfn /ucrt64/lib %{buildroot}/usr/%{target}/lib
+ln -sfn /ucrt64/include %{buildroot}%{_prefix}/%{target}/include
+ln -sfn /ucrt64/lib %{buildroot}%{_prefix}/%{target}/lib
 
 # ---- Rust std for cross target ----
 RUST_SYSROOT=$(rustc --print sysroot)
@@ -213,6 +223,8 @@ if [ -d "${STAGING}${RUST_SYSROOT}/lib/rustlib/%{rust_target}" ]; then
 fi
 
 # ---- Build infrastructure ----
+# /opt/msys2-cross: non-standard FHS location, but this path is hardcoded across
+# config files, wrappers, and scripts shared with the container workflow.
 mkdir -p %{buildroot}/opt/msys2-cross
 for d in config wrappers patches packages; do
     [ -d "$d" ] && cp -a "$d" %{buildroot}/opt/msys2-cross/
@@ -226,19 +238,8 @@ ln -sfn /opt/msys2-cross/wrappers/mingw-cmake %{buildroot}/ucrt64/bin/cmake
 ln -sfn /opt/msys2-cross/wrappers/mingw-meson %{buildroot}/ucrt64/bin/meson
 ln -sfn /opt/msys2-cross/wrappers/mingw-meson %{buildroot}/ucrt64/bin/meson.exe
 ln -sfn /opt/msys2-cross/wrappers/mingw-pkg-config %{buildroot}/ucrt64/bin/%{target}-pkg-config
-ln -sfn /usr/bin/%{target}-gcc %{buildroot}/ucrt64/bin/cc
-ln -sfn /usr/bin/gtk-update-icon-cache %{buildroot}/ucrt64/bin/gtk-update-icon-cache
-
-# bsdtar xattr wrapper for pacman on non-overlay filesystems
-install -Dm755 /dev/stdin %{buildroot}/usr/local/bin/bsdtar <<'WRAPPER'
-#!/bin/bash
-for arg in "$@"; do
-    case "$arg" in
-        -x*|--extract) exec /usr/bin/bsdtar --no-xattrs --no-fflags "$@" ;;
-    esac
-done
-exec /usr/bin/bsdtar "$@"
-WRAPPER
+ln -sfn %{_bindir}/%{target}-gcc %{buildroot}/ucrt64/bin/cc
+ln -sfn %{_bindir}/gtk-update-icon-cache %{buildroot}/ucrt64/bin/gtk-update-icon-cache
 
 # ---- PATH setup ----
 mkdir -p %{buildroot}%{_sysconfdir}/profile.d
@@ -254,14 +255,19 @@ EOF
 export INSTALL_ROOT=%{buildroot}
 bash scripts/08-setup-pacman.sh
 
+# 08-setup-pacman.sh creates bsdtar at /usr/local/bin for use during setup.
+# Move it to the wrappers directory — Fedora packages must not install to /usr/local.
+mv %{buildroot}/usr/local/bin/bsdtar %{buildroot}/opt/msys2-cross/wrappers/bsdtar
+rm -rf %{buildroot}/usr/local
+
 # =========================================================================
 %files
+%license licenses/COPYING3 licenses/COPYING.LIB licenses/COPYING3.LIB licenses/COPYING.mingw-w64
 /ucrt64
-/usr/bin/%{target}-*
+%{_bindir}/%{target}-*
 /usr/lib*/gcc/%{target}
-/usr/libexec/gcc/%{target}
-/usr/%{target}
-/usr/local/bin/bsdtar
+%{_libexecdir}/gcc/%{target}
+%{_prefix}/%{target}
 /opt/msys2-cross
 /var/lib/pacman/mingw
 /var/cache/pacman/mingw

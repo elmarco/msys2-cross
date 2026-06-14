@@ -86,8 +86,8 @@ sed -i \
     -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\} compile|/usr/bin/meson compile|g' \
     -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\} install|/usr/bin/meson install|g' \
     -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\} install|/usr/bin/meson install|g' \
-    -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\}\b|/usr/bin/meson|g' \
-    -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\}\b|/usr/bin/meson|g' \
+    -e 's|${MINGW_PREFIX}/bin/meson\(\.exe\)\{0,1\}\b|/opt/msys2-cross/wrappers/mingw-meson|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/meson\(\.exe\)\{0,1\}\b|/opt/msys2-cross/wrappers/mingw-meson|g' \
     PKGBUILD
 
 # Handle bare meson calls (newer PKGBUILDs without ${MINGW_PREFIX}/bin/ prefix)
