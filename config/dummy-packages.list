@@ -26,7 +26,7 @@ mingw-w64-ucrt-x86_64-cython
 mingw-w64-ucrt-x86_64-docbook-xml
 mingw-w64-ucrt-x86_64-docbook-xsl
 mingw-w64-ucrt-x86_64-doxygen
-# mingw-w64-ucrt-x86_64-gettext-tools — built by 09-build-base-libs.sh
+mingw-w64-ucrt-x86_64-gettext-tools
 mingw-w64-ucrt-x86_64-gi-docgen
 mingw-w64-ucrt-x86_64-git
 mingw-w64-ucrt-x86_64-gperf

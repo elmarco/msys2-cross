@@ -77,6 +77,8 @@ Requires:       autoconf
 Requires:       automake
 Requires:       libtool
 Requires:       python3
+Requires:       patch
+Requires:       zstd
 
 %description
 Cross-compiler and sysroot for building Windows (PE) binaries targeting
@@ -121,6 +123,7 @@ Requires:       itstool
 Requires:       po4a
 Requires:       nasm
 Requires:       ragel
+Requires:       gperf
 Requires:       gtk-update-icon-cache
 Requires:       cargo-c
 
