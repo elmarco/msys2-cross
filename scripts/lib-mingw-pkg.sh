@@ -167,6 +167,10 @@ parse_pkgbuild() {
         # Stub functions PKGBUILDs may call at top level
         mingw_arch() { :; }
 
+        # PKGBUILDs are not written for strict mode — they freely reference
+        # unset variables (e.g. qemu's _rc_no).
+        set +eu
+
         # Source in a subshell to avoid polluting the caller
         cd "$(dirname "$pkgbuild")"
         source "$(basename "$pkgbuild")" 2>/dev/null

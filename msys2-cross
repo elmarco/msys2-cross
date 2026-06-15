@@ -38,6 +38,7 @@ Commands:
   build <pkg> [...]     Build one or more MINGW packages (builds missing deps)
   install <pkg> [...]   Install built packages into the working image
   deps <pkg>            Show missing dependencies for a package
+  describe <pkg>        Show package info (version, deps, status)
   srpm <pkg> [outdir]   Generate an SRPM for a MINGW package
   mock-build            Build the msys2-cross RPM via mock
   shell [--network]     Open an interactive shell (--network enables network)
@@ -606,6 +607,83 @@ cmd_mock_build() {
     return $rc
 }
 
+cmd_describe() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross describe <pkg>"
+        exit 1
+    fi
+
+    ensure_mingw_packages
+
+    local pkg
+    pkg=$(normalize_pkg "$1")
+    checkout_pkg "$pkg"
+    local srcdir="${_checkout_actual}"
+    local pkgbuild="${MINGW_PACKAGES_DIR}/${srcdir}/PKGBUILD"
+
+    if [[ ! -f "$pkgbuild" ]]; then
+        err "PKGBUILD not found for ${pkg}"
+        exit 1
+    fi
+
+    local parsed
+    parsed=$(parse_pkgbuild "$pkgbuild")
+    if [[ -z "$parsed" ]]; then
+        err "Failed to parse PKGBUILD for ${pkg}"
+        exit 1
+    fi
+    eval "$parsed"
+
+    echo -e "${BOLD}${_pkgbase}${NC} ${_pkgver}-${_pkgrel}"
+    echo -e "  ${_pkgdesc}"
+    echo ""
+    [[ -n "${_url:-}" ]] && echo -e "  ${BOLD}URL:${NC}       ${_url}"
+
+    if [[ ${#_license[@]} -gt 0 && -n "${_license[0]:-}" ]]; then
+        echo -e "  ${BOLD}License:${NC}   ${_license[*]}"
+    fi
+
+    if [[ ${#_pkgname[@]} -gt 1 ]]; then
+        echo -e "  ${BOLD}Packages:${NC}  ${_pkgname[*]}"
+    fi
+
+    # Dependencies (filter MINGW prefix for readability)
+    local -a deps=() makedeps=()
+    for d in "${_depends[@]}"; do
+        [[ -z "$d" ]] && continue
+        deps+=("${d/#\$\{MINGW_PACKAGE_PREFIX\}-/}")
+        deps[-1]="${deps[-1]/#mingw-w64-ucrt-x86_64-/}"
+    done
+    for d in "${_makedepends[@]}"; do
+        [[ -z "$d" ]] && continue
+        makedeps+=("${d/#\$\{MINGW_PACKAGE_PREFIX\}-/}")
+        makedeps[-1]="${makedeps[-1]/#mingw-w64-ucrt-x86_64-/}"
+    done
+
+    if [[ ${#deps[@]} -gt 0 ]]; then
+        echo -e "  ${BOLD}Depends:${NC}   ${deps[*]}"
+    fi
+    if [[ ${#makedeps[@]} -gt 0 ]]; then
+        echo -e "  ${BOLD}Makedeps:${NC}  ${makedeps[*]}"
+    fi
+
+    # Status info
+    echo ""
+    local -a status=()
+    if [[ -f "${SCRIPT_DIR}/patches/${srcdir}.sh" ]]; then
+        status+=("cross-patch available")
+    fi
+    if ls "${MINGW_PACKAGES_DIR}/${srcdir}"/*.pkg.tar.* &>/dev/null; then
+        status+=("built")
+    fi
+    if prun pacman --config "${PACMAN_CONF}" -Qq "${_pkgname[0]/#\$\{MINGW_PACKAGE_PREFIX\}/mingw-w64-ucrt-x86_64}" &>/dev/null 2>&1; then
+        status+=("installed")
+    fi
+    if [[ ${#status[@]} -gt 0 ]]; then
+        echo -e "  ${BOLD}Status:${NC}    ${status[*]}"
+    fi
+}
+
 cmd_check_update() {
     local github_raw="https://raw.githubusercontent.com/msys2/MINGW-packages/master"
     local rc=0
@@ -709,6 +787,7 @@ case "$1" in
     build)    shift; cmd_build "$@" ;;
     install)  shift; cmd_install "$@" ;;
     deps)     shift; cmd_deps "$@" ;;
+    describe) shift; cmd_describe "$@" ;;
     shell)    shift; cmd_shell "$@" ;;
     run)      shift; cmd_run "$@" ;;
     list)     shift; cmd_list "$@" ;;

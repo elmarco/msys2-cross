@@ -24,27 +24,40 @@ The `msys2-cross` script manages a bootstrap image and a working image.
 Installed packages are committed to the working image, so dependency chains
 survive across builds.
 
-### Available commands
+## Commands
 
 | Command | Description |
 |---|---|
-| `setup [--force]` | First-time setup: download sources, build container, clone MINGW-packages |
+| `setup [--force]` | First-time setup: download sources, build container, clone MINGW-packages. `--force` rebuilds the bootstrap image |
 | `download <pkg> [...]` | Download sources for packages (runs on host with network) |
-| `build <pkg> [...] [-k]` | Build packages with automatic dependency resolution. `-k` keeps going after failures |
+| `build <pkg> [...] [-k] [makepkg flags]` | Build packages with automatic dependency resolution |
 | `install <pkg> [...]` | Install built packages into the sysroot |
 | `deps <pkg>` | Show missing dependencies in build order |
+| `describe <pkg>` | Show package info: version, deps, license, build/install status |
 | `shell [--network]` | Interactive shell (`--network` enables network access) |
-| `run [--network] <cmd...>` | Run an arbitrary command in the container |
+| `run [--network] <cmd...>` | Run a command in the container |
 | `list` | List installed packages |
 | `list -u` | List built but not installed packages |
-| `list -a` | List all packages known to cross-compile |
+| `list -a` | List all packages known to MINGW-packages (marks patched ones) |
 | `diff` | Show package changes in working image vs bootstrap |
 | `reset` | Remove working image (reset to bootstrap baseline) |
 | `destroy` | Remove all images and built packages |
 | `rebuild` | Rebuild the bootstrap image |
+| `srpm <pkg> [outdir]` | Generate an SRPM for a MINGW package |
+| `mock-build [mock flags]` | Build the msys2-cross RPM via mock |
 | `check-update` | Check for version drift against upstream MSYS2 |
 
 Package names can omit the `mingw-w64-` prefix: `build libpng` works like `build mingw-w64-libpng`.
+
+### Build flags
+
+The `build` command passes any flag starting with `-` through to `makepkg-mingw`. By default it always adds `--skipchecksums --nodeps -f`. Useful extra flags:
+
+```sh
+./msys2-cross build libpng --nocheck      # skip test suites
+./msys2-cross build libpng --noextract    # reuse previously extracted sources
+./msys2-cross build libpng -k             # keep going after failures (multi-pkg)
+```
 
 ### Manual usage (without the script)
 
@@ -78,6 +91,8 @@ podman run --rm -v $PWD/MINGW-packages:/src msys2-cross \
 
 Base libraries (libiconv, gettext, zlib, bzip2, xz, zstd, libffi, pcre2, expat) are pre-built during the container build so MSYS2 packages that implicitly depend on them work out of the box.
 
+Versions are pinned in `scripts/common.sh`. Run `./msys2-cross check-update` to compare against upstream MSYS2.
+
 ## How it works
 
 MSYS2's build model is already quasi-cross-compilation: a POSIX shell drives compilers targeting native Windows. This project swaps the POSIX host from MSYS2 (Windows + Cygwin layer) to Linux:
@@ -89,14 +104,15 @@ Linux:   bash (native)       → x86_64-w64-mingw32-gcc (Linux) → .dll/.exe
 
 `makepkg-mingw` automatically rewrites PKGBUILDs for cross-compilation:
 
-1. **Injects `--host` and `--build`** into autotools `configure` calls (MSYS2 PKGBUILDs omit these since build == host on Windows)
-2. **Rewrites `--build=${MINGW_CHOST}`** to the Linux build triple
-3. **Applies per-package patches** from `patches/` for cases the auto-rewrite can't handle
+1. Injects `--host` and `--build` into autotools `configure` calls
+2. Rewrites `--build=${MINGW_CHOST}` to the Linux build triple
+3. Replaces `meson.exe` / `cmake.exe` / `python3.exe` references with cross-aware wrappers
+4. Strips Windows-specific `MSYS2_ARG_CONV_EXCL` settings
+5. Applies per-package patches from `patches/` for cases the auto-rewrite can't handle
 
 ### Offline builds
 
-All builds run in an offline container (no network access). Sources are
-downloaded on the host before the build:
+All builds run in an offline container (no network access). Sources are downloaded on the host before the build:
 
 - Toolchain tarballs: `scripts/download-sources.sh` (run once)
 - Package sources: `msys2-cross download <pkg>` (runs `makepkg --verifysource`)
@@ -105,14 +121,20 @@ downloaded on the host before the build:
 ### Dependency resolution
 
 The `build` command automatically resolves transitive dependencies, detects
-circular dependencies (e.g., libwebp ↔ libtiff, libxml2 ↔ libxslt), and
-handles them by building in the right order and then rebuilding the cycle
-ancestor with full features:
+circular dependencies (e.g., libwebp ↔ libtiff), and handles them by building
+in the right order and then rebuilding the cycle ancestor with full features:
 
 ```sh
 # Resolves all deps, builds in order, handles cycles
 ./msys2-cross build gtk4
 ```
+
+### Split packages
+
+Some MSYS2 PKGBUILDs produce multiple packages from a single source (e.g.,
+`mingw-w64-gettext` produces `-runtime`, `-tools`, etc.). `msys2-cross`
+handles this transparently — building the source package produces all splits,
+and `install` installs all of them.
 
 ### Dummy packages
 
@@ -121,55 +143,134 @@ are registered as dummy pacman packages so makepkg's dependency checker is
 satisfied without cross-compiling them. The list is in
 `config/dummy-packages.list` (~120 entries).
 
+If a host tool like `gperf`, `ragel`, or `nasm` is missing from the dummy list, the build will try to cross-compile it. Add it to `dummy-packages.list` instead.
+
 ## Writing a per-package patch
 
-Some packages need manual fixes. Create `patches/<pkgbase>.sh`:
+Some packages need manual fixes for cross-compilation. Create `patches/<pkgbase>.sh`:
 
 ```sh
 # patches/mingw-w64-foo.sh
 
-# Example: disable a feature that requires running .exe at build time
+# Disable a feature that requires running .exe at build time
 sed -i 's/--enable-tests/--disable-tests/' PKGBUILD
 
-# Example: replace Windows-only tool with host equivalent
+# Replace Windows-only tool with host equivalent
 sed -i 's|${MINGW_PREFIX}/bin/tool.exe|/usr/bin/tool|g' PKGBUILD
 
-# Example: replace a dep, don't delete it (preserves array structure)
+# Replace a dep — don't delete it (preserves array structure)
 sed -i 's|"${MINGW_PACKAGE_PREFIX}-windows-only-dep"|"${MINGW_PACKAGE_PREFIX}-cc"|' PKGBUILD
 ```
 
 Rules:
 - Use `sed` replacements, not line deletions — deleting lines from bash arrays breaks syntax
 - Patches run on a copy; the original PKGBUILD is always restored
-- Patches apply before the generic auto-rewrites
+- Patches run before the generic auto-rewrites
+- PKGBUILD variables (`_realname`, `pkgver`) are **not** available when the patch runs — use literal strings in sed patterns
 
 ### Common cross-compilation issues and fixes
 
 | Problem | Symptom | Patch fix |
 |---|---|---|
 | Build runs `.exe` at build time | `cannot execute binary file` | Disable the feature or skip with `sed` |
-| Calls `${MINGW_PREFIX}/bin/meson.exe` | `No such file or directory` | Replace with `/opt/msys2-cross/wrappers/mingw-meson` |
+| GObject introspection | `g-ir-scanner` / `sanity_check.exe` failure | Disable introspection (see below) |
+| `cargo fetch` in prepare() | DNS resolution failure | `sed -i '/cargo update/d; /cargo fetch/d'` |
 | Calls `${MINGW_PREFIX}/bin/python3` | `No such file or directory` | Replace with `/usr/bin/python3` |
-| GObject introspection | `g-ir-scanner not found` | `sed -i 's/_enable_gir=yes/_enable_gir=no/'` |
-| `cargo fetch` in prepare() | DNS resolution failure | `sed -i '/cargo update/d; /cargo fetch/d'` (crates from host registry) |
 | GMP-style configure | `long long reliability test` | `--disable-assembly` (or install Wine) |
+
+### Disabling GObject introspection
+
+The most common patch. `g-ir-scanner` tries to execute compiled `.exe` files, which fails without Wine:
+
+```sh
+# Meson feature options (take enabled/disabled/auto)
+sed -i 's/--auto-features=enabled/--auto-features=enabled -Dintrospection=disabled/' PKGBUILD
+
+# Meson boolean options (take true/false — NOT enabled/disabled)
+sed -i 's|--prefix="${MINGW_PREFIX}"|--prefix="${MINGW_PREFIX}" -Dintrospection=false|' PKGBUILD
+
+# Autotools
+sed -i 's/--enable-introspection/--disable-introspection/' PKGBUILD
+
+# Also disable vapi when present (depends on GIR files)
+```
 
 ## RPM packaging
 
-An RPM spec file is provided for building the toolchain as a Fedora package
-(without a container). See `msys2-cross.spec` and `.copr/Makefile` for
-COPR integration.
+### Toolchain RPM
+
+An RPM spec file builds the cross-toolchain as Fedora packages (`msys2-cross`,
+`msys2-cross-rust`, `msys2-cross-extra-deps`):
 
 ```sh
+# Build via mock (recommended)
+./msys2-cross mock-build
+
+# Or manually
 ./scripts/download-sources.sh
 ./scripts/make-srpm-sources.sh
 rpmbuild -bs msys2-cross.spec --define "_sourcedir rpmbuild-sources"
 ```
 
+### MINGW package SRPMs
+
+Individual MINGW packages can be built as RPMs. The `srpm` command parses a
+PKGBUILD, downloads sources, and generates an RPM spec that drives
+`makepkg-mingw` inside the `%build` section:
+
+```sh
+# Generate an SRPM for a single package
+./msys2-cross srpm libpng
+
+# Build in Copr
+copr-cli build msys2-cross rpmbuild-mingw/mingw-w64-libpng/*.src.rpm
+```
+
+The generated specs handle split packages, git-based sources, license mapping, cross-compilation patches, and dependency mapping from MINGW to RPM names.
+
+### Copr workflow
+
+Build MINGW packages in dependency order. Each wave's packages can be submitted in parallel:
+
+```sh
+# 1. Build and publish toolchain
+./msys2-cross mock-build
+copr-cli build msys2-cross rpmbuild/msys2-cross-*.src.rpm
+
+# 2. Build MINGW packages in dependency waves
+./msys2-cross srpm libiconv
+copr-cli build msys2-cross rpmbuild-mingw/mingw-w64-libiconv/*.src.rpm
+# ... wait for completion, then packages that depend on it
+```
+
+See `.copr/Makefile` for automated Copr integration.
+
 ## Limitations
 
 - **No `.exe` execution** without Wine. ~5-10% of packages run compiled binaries during the build (code generators, test suites). Install Wine and register `binfmt_misc` to handle these.
-- **GObject introspection** requires running `g-ir-scanner` which is a Windows binary. Disabled by default in the glib2 patch.
+- **UCRT64 only** — no support for MSYS, MINGW32, or CLANG64 environments.
+- **GObject introspection** requires running `g-ir-scanner` which executes Windows binaries. Disabled by default via patches.
+
+## Testing
+
+Run smoke tests inside the container:
+```sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-gcc.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-cmake-project.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-meson-project.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-autotools.sh
+./msys2-cross run bash /opt/msys2-cross/tests/test-rust.sh
+```
+
+## Updating toolchain versions
+
+1. Update version vars in `scripts/common.sh`
+2. Check MSYS2's PKGBUILDs for new configure flags
+3. Update `pkgver` in `packages/*/PKGBUILD`
+4. Re-run `scripts/download-sources.sh`
+5. Rebuild: `./msys2-cross rebuild` (or `podman build --no-cache -t msys2-cross .`)
+
+Run `./msys2-cross check-update` to see what's drifted.
 
 ## Project structure
 
@@ -191,8 +292,10 @@ scripts/
   07-build-rust-cross.sh         Rust cross-compilation toolchain
   08-setup-pacman.sh             Package toolchain as pacman packages
   09-build-base-libs.sh          Base libraries (libiconv, gettext, ...)
+  lib-mingw-pkg.sh               Shared helpers (normalize_pkg, checkout_pkg, ...)
   resolve-deps.sh                Dependency resolver (runs inside container)
   make-srpm-sources.sh           RPM source tarball helper
+  make-mingw-srpm.sh             SRPM generator for MINGW packages
 config/
   makepkg-mingw                  Build driver (auto-rewrites + patches)
   makepkg_mingw.conf             makepkg config (cross-strip, compression)
@@ -200,20 +303,24 @@ config/
   pacman-mingw.conf              pacman config (separate DB at /var/lib/pacman/mingw/)
   dummy-packages.list            Host-provided tools registered as dummy pacman pkgs
   cross-file.meson               Meson cross-compilation file
-  native-file.meson              Meson native file
+  native-file.meson              Meson native file for build-machine tools
   toolchain.cmake                CMake toolchain file
   cargo-cross.toml               Cargo config (cross-linker + offline mode)
   mingw-env.sh                   Environment variables (MINGW_PREFIX, etc.)
 wrappers/
-  mingw-cmake                    cmake wrapper (sets cross-compiler flags)
-  mingw-meson                    meson wrapper (uses cross file)
-  mingw-pkg-config               pkg-config wrapper (sysroot paths)
-  native-pkg-config              pkg-config wrapper for native builds
+  mingw-cmake                    cmake wrapper (cross-flags, toolchain file)
+  mingw-meson                    meson wrapper (cross file, implicit setup detection)
+  mingw-pkg-config               pkg-config for cross-compiled libraries
+  native-pkg-config              pkg-config for host/native build-time deps
   cygpath                        No-op shim (MSYS2 path conversion)
   pacman-mingw                   pacman wrapper for the mingw DB
 packages/                        Pacman PKGBUILDs for toolchain components
-patches/                         Per-package cross-compilation fixes (~37 packages)
+patches/                         Per-package cross-compilation fixes (~41 packages)
 sources/                         Pre-downloaded tarballs (gitignored)
 tests/                           Smoke tests (gcc, cmake, meson, autotools, rust, zlib)
 logs/                            Build logs (auto-created, gitignored)
+rpmbuild-mingw/                  Generated MINGW SRPMs (gitignored)
+rpmbuild-sources/                Generated toolchain SRPM sources (gitignored)
+.copr/
+  Makefile                       Copr integration (builds toolchain SRPM)
 ```

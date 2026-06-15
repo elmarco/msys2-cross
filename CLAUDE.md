@@ -1,145 +1,143 @@
 # MSYS2 Linux Cross-Compilation Toolchain
 
-## Goal
+This file is for AI assistants and code generators. User-facing documentation is in README.md.
 
-Build Windows (PE) binaries from Linux/Fedora by reusing the MSYS2 MINGW-packages ecosystem. Instead of maintaining a separate set of cross-compilation recipes, this project lets you take unmodified MSYS2 PKGBUILDs and build them on a Linux host — producing the same Windows DLLs, libraries, and executables that MSYS2 would, but without needing a Windows or MSYS2 environment.
+## Design constraints
 
-## Design principles
+- **Offline builds**: Containers run with `--network=none`. All sources must be pre-downloaded on the host. Never add network-dependent steps to build scripts.
+- **No PKGBUILD modifications on disk**: `makepkg-mingw` works on a copy (`cp PKGBUILD PKGBUILD.orig`, restore after build). Patches must not corrupt the original. Use `sed` replacements that preserve array structure — never delete lines from the middle of bash arrays.
+- **Bind-mount workflow**: Users clone MINGW-packages on the host and mount into the container. The container never clones repos itself.
+- **Target**: UCRT64 only (`x86_64-w64-mingw32`, UCRT C runtime).
 
-- **Offline builds**: The container runs with `--network=none`. All sources are pre-downloaded on the host: toolchain tarballs via `scripts/download-sources.sh`, package sources via `msys2-cross download`, and Rust crates auto-fetched into `~/.cargo/registry/` (bind-mounted read-only into the container).
-- **No PKGBUILD modifications on disk**: `makepkg-mingw` works on a copy of PKGBUILD (`cp PKGBUILD PKGBUILD.orig`, restore after build). Patches must not corrupt the original. Use `sed` replacements that preserve array structure — never delete lines from the middle of bash arrays.
-- **Bind-mount workflow**: Users clone MINGW-packages on the host and mount into the container. The container should never clone repos itself.
+## Architecture decisions
 
-## How it works
+These are load-bearing — violating them breaks the build:
 
-A GCC cross-compiler targeting `x86_64-w64-mingw32` (UCRT64) is built from source on Fedora Linux, along with a Rust cross-compilation toolchain (std library compiled from source for `x86_64-pc-windows-gnu`). Base libraries (libiconv, gettext, zlib, etc.) are pre-built during the container build. Then `makepkg-mingw` is provided so MSYS2 MINGW-packages PKGBUILDs can be built on Linux without modification.
-
-The `msys2-cross` CLI manages two container images:
-- **Bootstrap image**: the toolchain + base libraries (built once, ~30-60 min)
-- **Working image**: bootstrap + user-installed packages (committed after each `install`)
-
-## Project layout
-
-```
-msys2-cross                  CLI tool: setup, build, install, deps, shell, ...
-msys2-cross.spec             RPM spec file (non-container builds)
-Containerfile                Multi-stage: toolchain-builder → msys2-cross
-scripts/
-  download-sources.sh        Pre-download all toolchain tarballs
-  common.sh                  Version pins and shared variables
-  00-install-host-deps.sh    Fedora packages (gcc, cmake, meson, ...)
-  00-install-extra-deps.sh   Additional host dependencies
-  01–06-build-*.sh           Cross-toolchain build stages (binutils → GCC)
-  07-build-rust-cross.sh     Rust std for x86_64-pc-windows-gnu
-  08-setup-pacman.sh         Package toolchain as pacman packages + dummy packages
-  09-build-base-libs.sh      Base libraries (libiconv, gettext, zlib, ...)
-  lib-mingw-pkg.sh           Shared helpers (normalize_pkg, checkout_pkg, parse_pkgbuild, ...)
-  resolve-deps.sh            Dependency resolver with cycle detection (runs in container)
-  make-srpm-sources.sh       RPM source tarball helper
-  make-mingw-srpm.sh         Generate SRPM for any MINGW package
-config/
-  makepkg-mingw              Build driver (auto-rewrites PKGBUILDs for cross-compilation)
-  makepkg_mingw.conf         makepkg config (cross-strip, compression, PACMAN wrapper)
-  makepkg-download.conf      makepkg config for host-side source downloads
-  pacman-mingw.conf          pacman config (separate DB at /var/lib/pacman/mingw/)
-  dummy-packages.list        ~120 host tools registered as dummy pacman packages
-  cross-file.meson           Meson cross-compilation file
-  native-file.meson          Meson native file
-  toolchain.cmake            CMake toolchain file
-  cargo-cross.toml           Cargo config (cross-linker + offline mode)
-  mingw-env.sh               Environment variables (MINGW_PREFIX, MINGW_CHOST, etc.)
-wrappers/                    mingw-cmake, mingw-meson, mingw-pkg-config, cygpath shim
-packages/                    Pacman PKGBUILDs wrapping bootstrap artifacts
-patches/                     Per-package .sh scripts for cross-compilation fixes (~37 files)
-sources/                     Pre-downloaded tarballs (gitignored)
-tests/                       Smoke tests (gcc, cmake, meson, autotools, rust, zlib)
-logs/                        Build logs (auto-created, gitignored)
-```
-
-## Key design decisions
-
-- **Target**: UCRT64 only (x86_64-w64-mingw32, UCRT C runtime)
-- **Sysroot at /ucrt64**: Matches MSYS2's `MINGW_PREFIX` so PKGBUILDs work unmodified
-- **Cross-compiler in /usr/bin/**: Standard `x86_64-w64-mingw32-gcc` naming
-- **Symlinks /usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}**: GCC sysroot discovery (can't replace the dir since binutils creates `/usr/x86_64-w64-mingw32/bin/`)
-- **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf
-- **Dummy packages for host-provided tools**: Build tools (autotools, meson, cmake, python, etc.) are provided by Fedora, not cross-compiled. Dummy pacman packages satisfy these MINGW dependencies. Listed in `config/dummy-packages.list`.
-- **Cargo offline mode**: `config/cargo-cross.toml` sets `[net] offline = true`. Host cargo registry is bind-mounted read-only. Crates are auto-fetched during `msys2-cross download`.
-- **Circular dependency handling**: `resolve-deps.sh` detects cycles (e.g., libwebp ↔ libtiff), builds in the right order, then rebuilds the cycle ancestor with full features. Uses `--nodeps` in makepkg to bypass dependency checking.
-- **Wine is optional**: Only needed for ~5-10% of packages that run .exe at build time
-
-## Version pins
-
-Matched to MSYS2 MINGW-packages as of 2026-06-03 — update in `scripts/common.sh`:
-- GCC 16.1.0
-- binutils 2.46
-- mingw-w64 14.0.0 (commit 93753750c)
-- Rust 1.96.0 (std built from source, uses Fedora's rustc as bootstrap)
-
-## Building
-
-```sh
-# One-time setup (downloads sources, builds container, clones MINGW-packages)
-./msys2-cross setup
-
-# Build a package (auto-resolves dependencies)
-./msys2-cross build gtk4
-
-# Or step by step:
-./msys2-cross download libpng
-./msys2-cross build libpng
-./msys2-cross install libpng
-```
-
-First build takes 30-60 min (GCC compilation). The multi-stage Containerfile caches the toolchain layer.
-
-## Testing
-
-Run smoke tests inside the container:
-```sh
-./msys2-cross run bash /opt/msys2-cross/tests/test-gcc.sh
-./msys2-cross run bash /opt/msys2-cross/tests/test-cmake-project.sh
-./msys2-cross run bash /opt/msys2-cross/tests/test-meson-project.sh
-./msys2-cross run bash /opt/msys2-cross/tests/test-autotools.sh
-./msys2-cross run bash /opt/msys2-cross/tests/test-rust.sh
-```
-
-## Known issues to watch for
-
-- **`--build` flag in PKGBUILDs**: Many MSYS2 PKGBUILDs pass `--build=${MINGW_CHOST}` to configure, which is correct on MSYS2 (where the build machine IS mingw32) but wrong on Linux cross-compilation. makepkg-mingw auto-rewrites this, but some packages (GMP) have custom configure that still fails.
+- **Sysroot at `/ucrt64`**: Matches MSYS2's `MINGW_PREFIX` so PKGBUILDs work unmodified.
+- **Cross-compiler in `/usr/bin/`**: Standard `x86_64-w64-mingw32-gcc` naming. GCC discovers the sysroot via symlinks `/usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}`. The dir `/usr/x86_64-w64-mingw32/bin/` is created by binutils, so the symlink trick replaces only `include` and `lib`.
+- **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf. All pacman commands must use `--config /opt/msys2-cross/config/pacman-mingw.conf`.
 - **CC must NOT be exported globally**: `config/mingw-env.sh` intentionally does NOT export CC/CXX. Autotools finds the cross-compiler via `--host=${MINGW_CHOST}`. Setting CC globally breaks `config.guess` (it uses `$CC -dumpmachine` and misidentifies the build machine).
-- **pkg-config/pkgconf recursion**: Do NOT symlink pkg-config or pkgconf into /ucrt64/bin — Fedora's pkgconf finds itself via PATH and hangs in infinite recursion. Use the meson cross file's `pkgconfig =` entry instead.
+- **Cargo offline mode**: `config/cargo-cross.toml` sets `[net] offline = true`. Host cargo registry is bind-mounted read-only into the container.
+- **Fedora uses `lib64`**: GCC installs to `/usr/lib64/gcc/` not `/usr/lib/gcc/`. The Containerfile accounts for this.
+
+## Pitfalls
+
+Things that have caused real bugs — check these before modifying related code:
+
+- **pkg-config/pkgconf recursion**: Do NOT symlink pkg-config or pkgconf into `/ucrt64/bin`. Fedora's pkgconf finds itself via PATH and hangs in infinite recursion. Use the meson cross file's `pkgconfig =` entry instead.
 - **Container UID mapping**: Running with `-v host:container:rw` may create files owned by container UIDs (100999). Use `podman unshare chown` to fix, or mount `:ro` when possible.
 - **Strip tool**: `makepkg_mingw.conf` sets `STRIP=/usr/bin/x86_64-w64-mingw32-strip`. If PE binaries come out corrupted, verify this is being picked up by makepkg.
-- **Fedora uses lib64**: GCC installs to `/usr/lib64/gcc/` not `/usr/lib/gcc/`. The Containerfile accounts for this.
-- **Rust packages need crates**: Packages with `Cargo.lock` (e.g., librsvg) need their crates pre-fetched. `msys2-cross download` does this automatically. If building manually, run `cargo fetch` on the host first.
-- **gobject-introspection**: `g-ir-scanner` executes compiled `.exe` to generate GIR data. This fails in cross-compilation without Wine. Most packages need a patch to disable introspection (see "Writing patches" below). Symptoms: `Failed running .../sanity_check.exe` or `GCab-1.0.gir not found`.
-- **Meson implicit setup**: Some PKGBUILDs call `${MINGW_PREFIX}/bin/meson` without the `setup` subcommand (old-style). `makepkg-mingw` rewrites all bare meson references to the `mingw-meson` wrapper, which detects the implicit setup and injects `--cross-file`. If a build says `Build type: native build`, the wrapper isn't being used.
-- **Build tools as dummy packages**: Host-only tools like `gperf`, `ragel`, `nasm` that generate source code should be in `dummy-packages.list`, not cross-compiled. If a BuildRequires for `mingw-w64-ucrt-x86_64-<tool>` appears in a generated spec and that tool is installed on the host, it's probably missing from the dummy list.
+- **Meson boolean vs feature options**: Meson `feature` options take `enabled`/`disabled`/`auto`. Meson `boolean` options take `true`/`false`. Using the wrong type silently fails. When writing patches, check the `meson_options.txt` or `meson.options` in the package.
+- **`--build` flag in PKGBUILDs**: Many MSYS2 PKGBUILDs pass `--build=${MINGW_CHOST}` to configure, which is correct on MSYS2 (build machine IS mingw32) but wrong for cross-compilation. `makepkg-mingw` auto-rewrites this, but packages with custom configure (GMP) may still fail.
+- **Meson implicit setup**: Some PKGBUILDs call `meson` without the `setup` subcommand (old-style). The `mingw-meson` wrapper detects this and injects `--cross-file`. If a build says `Build type: native build`, the wrapper isn't being used.
+- **Fedora makepkg `---mirror` bug**: Fedora's patched makepkg passes `---mirror` (triple dash) to curl, which curl rejects. The SRPM generator works around this with a curl wrapper that strips triple-dash args.
+- **Build tools as dummy packages**: Host-only tools like `gperf`, `ragel`, `nasm` that generate source code should be in `dummy-packages.list`, not cross-compiled. If a `BuildRequires` for `mingw-w64-ucrt-x86_64-<tool>` appears in a generated spec and that tool is installed on the host, it's probably missing from the dummy list.
+
+## makepkg-mingw auto-rewrite patterns
+
+`config/makepkg-mingw` applies per-package patches first, then these generic rewrites (in order):
+
+1. **Autotools `--host`/`--build` injection**: Adds `--host=${MINGW_CHOST} --build=<linux-triple>` to `configure` lines containing `--prefix=${MINGW_PREFIX}`
+2. **`--build=${MINGW_CHOST}` fix**: Rewrites to `--build=<linux-triple>` (handles `${MINGW_CHOST}`, `"${MINGW_CHOST}"`, and `${CHOST}` forms)
+3. **`CHOST=${MINGW_CHOST}` pattern** (zlib-style configure): Replaces with `CC=${MINGW_CHOST}-gcc` + `--host`/`--build` flags. Handles both single-line and multi-line (backslash continuation)
+4. **Meson references**: Routes `meson setup` to `mingw-meson` wrapper, `meson compile`/`install` to `/usr/bin/meson`. Handles `${MINGW_PREFIX}/bin/meson.exe`, bare `meson`, and both quoting styles
+5. **CMake references**: Rewrites `${MINGW_PREFIX}/bin/cmake(.exe)` to `/ucrt64/bin/cmake` (which is the `mingw-cmake` wrapper)
+6. **`MSYS2_ARG_CONV_EXCL` removal**: Strips all forms (env prefix with continuation, inline prefix, standalone export). MSYS2-only path conversion suppression, not needed on Linux
+7. **Python exe references**: Rewrites `${MINGW_PREFIX}/bin/python3(.exe)` → `/usr/bin/python3`. Also rewrites CMake `-DPython3_EXECUTABLE=`, `-DPython_EXECUTABLE=`, `-DPYTHON_EXECUTABLE=`
+8. **`noextract` + manual tar removal**: Removes `noextract=()` arrays and replaces manual `tar -xf` lines with `true` (MSYS2 path workaround not needed on Linux)
+
+After rewrites, **validation warnings** are emitted for patterns that should have been caught but weren't (e.g., `--build=${MINGW_CHOST}` still present, meson/cmake still referencing `${MINGW_PREFIX}/bin/`).
+
+## Wrapper behavior
+
+- **`mingw-meson`**: Uses `config/cross-file.meson`. Detects subcommands — `compile`/`install`/`test` bypass cross-file injection. Detects old-style implicit `setup` (no subcommand) and injects cross-file automatically.
+- **`mingw-cmake`**: Sets toolchain file via `-DCMAKE_TOOLCHAIN_FILE`. Detects `--build`/`--install`/`--open`/`--preset` subcommands and bypasses cross-flags for those.
+- **`mingw-pkg-config`**: Sets `PKG_CONFIG_LIBDIR` to `/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig` so pkg-config finds cross-compiled `.pc` files.
+- **`native-pkg-config`**: Resets `PKG_CONFIG_LIBDIR` to system paths (`/usr/lib64/pkgconfig:/usr/share/pkgconfig`). Used for native build-time dependencies so they don't accidentally pick up cross `.pc` files. Referenced in `config/cross-file.meson`.
+- **`cygpath`**: No-op shim that returns its input unchanged. MSYS2 PKGBUILDs call `cygpath -m` to convert Unix paths to Windows paths — on Linux, paths are already correct.
+- **`pacman-mingw`**: Wrapper that always passes `--config /opt/msys2-cross/config/pacman-mingw.conf`.
+
+## Dependency resolver internals
+
+`scripts/resolve-deps.sh` runs inside the container. It performs a DFS traversal of package dependencies, using pacman to check what's already installed.
+
+**Output format** (consumed by `cmd_build` in `msys2-cross`):
+```
+pkg-a
+pkg-b
+pkg-c
+---rebuild---
+pkg-a
+```
+
+Lines before `---rebuild---` are packages to build/install in order. Lines after are packages that need a second build to resolve circular dependencies (e.g., libwebp depends on libtiff which depends on libwebp). The rebuild pass uses `install_single --force` to overwrite the already-installed version.
+
+**Cycle detection**: When DFS encounters a node already on the stack (back-edge), it records the child as needing rebuild. After the initial build, these cycle members are rebuilt with their full dependency set available.
+
+## Split package handling
+
+`checkout_pkg()` in `lib-mingw-pkg.sh` handles split packages by stripping common suffixes (`-runtime`, `-tools`, `-libs`, `-devel`, `-git`) to find the source directory. For example, `mingw-w64-gettext-runtime` maps to the `mingw-w64-gettext` source dir.
+
+`install_single()` finds all `*.pkg.tar.*` files in a package directory and installs them all, handling the case where one PKGBUILD produces multiple split packages.
+
+## lib-mingw-pkg.sh public API
+
+| Function | Purpose |
+|---|---|
+| `normalize_pkg(name)` | Adds `mingw-w64-` prefix if missing |
+| `ensure_mingw_packages()` | Clones sparse MINGW-packages repo if absent (uses `MINGW_PACKAGES_DIR`) |
+| `checkout_pkg(pkg)` | Sparse-checks out a package. Handles split packages. Sets `_checkout_actual` to the resolved source dir |
+| `download_sources(pkg)` | Runs `makepkg --verifysource` with `config/makepkg-download.conf`. Calls `_pre_clone_git_sources` and `fetch_cargo_deps` |
+| `_pre_clone_git_sources(pkgbuild)` | Works around Fedora makepkg VCS bug: pre-clones `git+` sources so makepkg doesn't fail |
+| `fetch_cargo_deps(pkgbuild)` | Pre-fetches Rust crate dependencies by extracting `Cargo.lock` from the source and running `cargo fetch` |
+| `parse_pkgbuild(path)` | Evaluates a PKGBUILD in a subshell and emits shell variable assignments for `_pkgbase`, `_pkgname[]`, `_pkgver`, `_pkgrel`, `_pkgdesc`, `_url`, `_license[]`, `_depends[]`, `_makedepends[]`, `_source[]` |
+| `load_dummy_packages()` | Loads `config/dummy-packages.list` + scans `packages/` dir PKGBUILDs for additional dummy packages and their `Provides:` entries |
 
 ## Writing patches (patches/*.sh)
 
-Per-package shell scripts that modify PKGBUILD via sed before building. Rules:
-- **Never delete lines** from bash arrays — use `sed 's/pattern/replacement/'` instead
-- Patches run via `source` BEFORE the PKGBUILD is sourced — **PKGBUILD variables like `_realname`, `pkgver`, `pkgname` are NOT available**. Use only literal strings in sed patterns.
+- **Never delete lines** from bash arrays — use `sed 's/pattern/replacement/'`
+- Patches run via `source` BEFORE the PKGBUILD is sourced — **PKGBUILD variables like `_realname`, `pkgver`, `pkgname` are NOT available**. Use only literal strings in sed patterns
 - Patches run BEFORE the generic auto-rewrites in makepkg-mingw
 - Name: `<pkgbase>.sh` (e.g., `mingw-w64-glib2.sh`)
-- The PKGBUILD is a temporary copy; original is always restored after build
 - For Rust packages: `sed -i '/cargo update/d; /cargo fetch/d'` to skip network-dependent commands
 
-### Common cross-compilation patches
+### Disabling gobject-introspection
 
-- **Disable gobject-introspection**: `g-ir-scanner` tries to execute compiled `.exe` files, which fails without Wine. Disable for all packages that use it:
-  - Meson `feature` options: `sed -i 's/--auto-features=enabled/--auto-features=enabled -Dintrospection=disabled/' PKGBUILD`
-  - Meson `boolean` options: use `-Dintrospection=false` (not `disabled` — **meson boolean options take `true`/`false`, feature options take `enabled`/`disabled`/`auto`**)
-  - Autotools: `sed -i 's/--enable-introspection/--disable-introspection/' PKGBUILD`
-  - Also disable `-Dvapi=false` when present (vapi generation depends on GIR files)
-- **When no `--auto-features` to hook into**: append to `--prefix` instead: `sed -i 's|--prefix="${MINGW_PREFIX}"|--prefix="${MINGW_PREFIX}" -Dintrospection=false|' PKGBUILD`
+`g-ir-scanner` tries to execute compiled `.exe` files — fails without Wine. The most common reason for writing a patch:
 
-## Adding new toolchain versions
+- Meson `feature` options: `sed -i 's/--auto-features=enabled/--auto-features=enabled -Dintrospection=disabled/' PKGBUILD`
+- Meson `boolean` options: use `-Dintrospection=false` (not `disabled`)
+- Autotools: `sed -i 's/--enable-introspection/--disable-introspection/' PKGBUILD`
+- When no `--auto-features` to hook into: append to `--prefix`: `sed -i 's|--prefix="${MINGW_PREFIX}"|--prefix="${MINGW_PREFIX}" -Dintrospection=false|' PKGBUILD`
+- Also disable `-Dvapi=false` when present (vapi generation depends on GIR files)
 
-1. Update version vars in `scripts/common.sh`
-2. Check MSYS2's PKGBUILDs for new configure flags: https://github.com/msys2/MINGW-packages
-3. Update `pkgver` in `packages/*/PKGBUILD`
-4. Re-run `scripts/download-sources.sh`
-5. Rebuild: `podman build --no-cache -t msys2-cross .`
+## RPM/SRPM internals
+
+### Toolchain spec (`msys2-cross.spec`)
+
+Builds three sub-packages: `msys2-cross` (toolchain + base libs), `msys2-cross-rust` (Rust cross-std), `msys2-cross-extra-deps` (additional host deps).
+
+**Bootstrap Provides**: The spec declares virtual `Provides:` for gettext sub-packages (`gettext-runtime`, `gettext-libtextstyle`, `gettext-tools`, `gettext`). These break the libiconv↔gettext circular dependency in mock: libtre depends on gettext-runtime, but gettext can't be built until libiconv is available. The virtual provides let mock install packages that transitively need gettext before the real gettext RPM exists.
+
+**Do NOT add libiconv to Provides** — packages that BuildRequire libiconv need the real RPM with headers, and a virtual provide would shadow it (DNF considers the dependency satisfied without installing actual files).
+
+### MINGW SRPM generator (`scripts/make-mingw-srpm.sh`)
+
+Generates a Fedora-style SRPM from any MSYS2 PKGBUILD:
+
+1. Parses PKGBUILD arrays (`depends`, `makedepends`, `source`) via `lib-mingw-pkg.sh`
+2. Maps MINGW package names to RPM names (prefix `mingw-w64-ucrt-x86_64-`)
+3. **Filters gettext sub-packages** from `BuildRequires` — they'd create unresolvable cycles since gettext itself needs to be built from a MINGW PKGBUILD
+4. Detects `git+` sources → adds `BuildRequires: git`
+5. Detects cross-compilation patches → embeds as `SourceN`
+6. Handles split packages (multiple `pkgname` entries from one `pkgbase`)
+7. Maps SPDX licenses from PKGBUILD to RPM format
+8. The generated `%build` section includes a `curl` wrapper to work around the Fedora makepkg `---mirror` bug
+
+### Dummy package system
+
+Two sources of dummy packages (host tools that don't need cross-compilation):
+1. `config/dummy-packages.list` — explicit list (~120 entries)
+2. `packages/` directory — PKGBUILDs for toolchain components, plus their `Provides:` entries
+
+`load_dummy_packages()` merges both. If a MINGW dependency resolves to a dummy package, the resolver skips it.
