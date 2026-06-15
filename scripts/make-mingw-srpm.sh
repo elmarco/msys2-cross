@@ -42,21 +42,42 @@ download_sources "${SRCDIR}"
 declare -A _dummies
 load_dummy_packages _dummies
 
+# Gettext sub-packages aren't available until gettext is built, but libiconv
+# (which is built first) Requires them at runtime.  Filter only the gettext
+# packages from BuildRequires so libiconv's RPM can be installed in mock
+# without pulling in not-yet-built gettext.  Do NOT filter libiconv — packages
+# like gettext legitimately need it at build time and it's already in the repo.
+declare -A _base_provides=(
+    [mingw-w64-ucrt-x86_64-gettext-runtime]=1
+    [mingw-w64-ucrt-x86_64-gettext-libtextstyle]=1
+    [mingw-w64-ucrt-x86_64-gettext-tools]=1
+    [mingw-w64-ucrt-x86_64-gettext]=1
+)
+
 # Map MINGW dependencies to RPM tags
 map_deps() {
     local -n _deps_in=$1
     local dep_type=$2
+    local skip_base=${3:-0}
     for dep in "${_deps_in[@]}"; do
         [[ -z "$dep" ]] && continue
         dep="${dep%%[><=]*}"
         [[ "$dep" != mingw-w64-ucrt-x86_64-* ]] && continue
         [[ -n "${_dummies[$dep]+x}" ]] && continue
+        [[ "$skip_base" -eq 1 && -n "${_base_provides[$dep]+x}" ]] && continue
         echo "${dep_type}: ${dep}"
     done
 }
 
-BUILD_DEPS=$(map_deps _makedepends "BuildRequires")
+BUILD_DEPS=$(map_deps _makedepends "BuildRequires" 1)
+BUILD_DEPS+=$'\n'$(map_deps _depends "BuildRequires" 1)
 RUN_DEPS=$(map_deps _depends "Requires")
+
+# Detect git sources — makepkg needs git to extract them
+_has_git_source=0
+for src in "${_source[@]}"; do
+    [[ "$src" == *git+* ]] && _has_git_source=1
+done
 
 # Classify sources as URLs or local files
 _source_urls=()
@@ -158,6 +179,7 @@ $(printf '%s\n' "${_spec_sources[@]}")
 BuildRequires:  msys2-cross
 BuildRequires:  msys2-cross-extra-deps
 BuildRequires:  fakeroot
+$([ "$_has_git_source" -eq 1 ] && echo "BuildRequires:  git")
 ${BUILD_DEPS}
 
 Requires:       msys2-cross

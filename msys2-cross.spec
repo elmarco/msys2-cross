@@ -80,6 +80,16 @@ Requires:       python3
 Requires:       patch
 Requires:       zstd
 
+# Bootstrap provides: gettext sub-packages that don't exist until gettext is
+# built, but are pulled in transitively (e.g., libtre Requires gettext-runtime).
+# Virtual provides let those RPMs install in mock before gettext is available.
+# Do NOT add libiconv here — packages that BuildRequires libiconv need the
+# real RPM with headers, and a virtual provide would shadow it.
+Provides:       mingw-w64-ucrt-x86_64-gettext-runtime
+Provides:       mingw-w64-ucrt-x86_64-gettext-libtextstyle
+Provides:       mingw-w64-ucrt-x86_64-gettext-tools
+Provides:       mingw-w64-ucrt-x86_64-gettext
+
 %description
 Cross-compiler and sysroot for building Windows (PE) binaries targeting
 x86_64-w64-mingw32 with the UCRT runtime.  Built from GCC %{gcc_version},

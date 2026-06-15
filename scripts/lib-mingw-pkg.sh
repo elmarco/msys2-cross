@@ -171,6 +171,11 @@ parse_pkgbuild() {
         cd "$(dirname "$pkgbuild")"
         source "$(basename "$pkgbuild")" 2>/dev/null
 
+        # For split packages, pkgdesc may only be set inside package_*() functions
+        if [[ -z "${pkgdesc:-}" ]]; then
+            pkgdesc=$(grep -m1 'pkgdesc=' "$(basename "$pkgbuild")" | sed 's/.*pkgdesc=["'\'']\(.*\)["'\'']/\1/')
+        fi
+
         # Emit assignments
         echo "_pkgbase=${pkgbase:-${pkgname[0]:-unknown}}"
         echo "_pkgver=${pkgver}"
