@@ -106,11 +106,10 @@ sed -i \
     PKGBUILD
 
 # Remove MSYS2_ARG_CONV_EXCL (MSYS2-only path conversion suppression).
-# It's typically used as an env var prefix with line continuation:
-#   MSYS2_ARG_CONV_EXCL="--prefix=" \
-# Replace with nothing but preserve the command on the next line.
+# Forms: env prefix with continuation, inline prefix, or standalone export.
 sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" \\$//' PKGBUILD
 sed -i 's/MSYS2_ARG_CONV_EXCL="[^"]*" //' PKGBUILD
+sed -i '/^[[:space:]]*\(export \)\{0,1\}MSYS2_ARG_CONV_EXCL="[^"]*"$/d' PKGBUILD
 
 # Rewrite MINGW python exe references to host python
 sed -i \

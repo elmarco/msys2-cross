@@ -89,10 +89,42 @@ download_sources() {
         export MINGW_CHOST=x86_64-w64-mingw32
         export MSYSTEM=UCRT64
         cd "${MINGW_PACKAGES_DIR}/${pkg}"
+        # Workaround: Fedora's makepkg 7.0.0 has a bug (---mirror instead of
+        # --mirror) that breaks git clone for VCS sources. Pre-clone any git
+        # sources so makepkg finds existing mirrors and skips the buggy clone.
+        _pre_clone_git_sources
         makepkg --verifysource --skippgpcheck \
             --config "${DOWNLOAD_CONF}" --nodeps -f
     )
     fetch_cargo_deps "$pkg"
+}
+
+# Pre-clone git sources from a PKGBUILD to work around Fedora makepkg bugs.
+# Must be called from the PKGBUILD directory with MINGW vars exported.
+_pre_clone_git_sources() {
+    local sources
+    sources=$(
+        mingw_arch() { :; }
+        source PKGBUILD 2>/dev/null
+        printf '%s\n' "${source[@]}"
+    )
+    while IFS= read -r src; do
+        [[ "$src" == *git+* ]] || continue
+        local name url
+        if [[ "$src" == *::* ]]; then
+            name="${src%%::*}"
+            url="${src#*::}"
+        else
+            url="$src"
+            name=$(basename "${url%%#*}" .git)
+        fi
+        url="${url#git+}"
+        url="${url%%#*}"
+        url="${url%%\?*}"
+        [[ -d "$name" ]] && continue
+        msg "Pre-cloning ${name} git repo..."
+        git clone --mirror "$url" "$name" || warn "Failed to pre-clone ${name}"
+    done <<< "$sources"
 }
 
 # Pre-fetch Rust crate dependencies so offline builds can find them.
