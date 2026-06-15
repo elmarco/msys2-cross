@@ -1,13 +1,13 @@
 %global gcc_version   16.1.0
-%global binutils_ver  2.46
-%global mingw_commit  818fa65100f7
+%global binutils_ver  2.46.1
+%global mingw_commit  19f5121a2944
 %global mingw_ver     14.0.0
 %global rust_version  1.96.0
 %global target        x86_64-w64-mingw32
 %global rust_target   x86_64-pc-windows-gnu
 
 Name:           msys2-cross
-Version:        %{gcc_version}
+Version:        %(date +%%Y%%m%%d)
 Release:        1%{?dist}
 Summary:        UCRT64 cross-compilation toolchain for building Windows binaries
 
@@ -294,5 +294,8 @@ rm -rf %{buildroot}/usr/local
 
 # =========================================================================
 %changelog
+* Tue Jun 16 2026 Marc-André Lureau <marcandre@redhat.com> - 20260616-1
+- Switch to date-based versioning (YYYYMMDD)
+
 * Fri Jun 12 2026 Marc-André Lureau <marcandre@redhat.com> - 16.1.0-1
 - Initial source-built RPM of msys2-cross UCRT64 cross-toolchain

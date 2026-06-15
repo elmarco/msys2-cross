@@ -21,7 +21,7 @@ mkdir -p "${OUTDIR}"
 OUTDIR="$(cd "${OUTDIR}" && pwd)"
 
 # Pack build infrastructure (scripts, config, wrappers, patches, packages)
-TARNAME="msys2-cross-scripts-${GCC_VERSION}.tar.gz"
+TARNAME="msys2-cross-scripts-$(date +%Y%m%d).tar.gz"
 echo "==> Creating ${TARNAME}..."
 tar czf "${OUTDIR}/${TARNAME}" \
     -C "${REPO_DIR}" \
