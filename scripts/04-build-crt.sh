@@ -14,12 +14,25 @@ fi
 mkdir -p "${BUILD_DIR}/crt"
 cd "${BUILD_DIR}/crt"
 
+if [[ "${CC_FAMILY}" = "clang" ]]; then
+    export CC="${CROSS_CC}"
+    export CXX="${CROSS_CXX}"
+    export AR="${CROSS_AR}"
+    export RANLIB="${CROSS_RANLIB}"
+    export DLLTOOL="${CROSS_DLLTOOL}"
+fi
+
+_crt_lib_flags=""
+case "${CMAKE_SYSTEM_PROCESSOR}" in
+    x86_64)  _crt_lib_flags="--enable-lib64 --disable-lib32" ;;
+    aarch64) _crt_lib_flags="--enable-libarm64 --disable-lib32 --disable-lib64" ;;
+esac
+
 "${SRC_DIR}/mingw-w64/mingw-w64-crt/configure" \
     --host="${TARGET}" \
     --prefix="${MINGW_PREFIX}" \
     --with-default-msvcrt=ucrt \
-    --enable-lib64 \
-    --disable-lib32 \
+    ${_crt_lib_flags} \
     --enable-static \
     --enable-shared
 

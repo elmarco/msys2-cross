@@ -13,6 +13,14 @@ fi
 mkdir -p "${BUILD_DIR}/winpthreads"
 cd "${BUILD_DIR}/winpthreads"
 
+if [[ "${CC_FAMILY}" = "clang" ]]; then
+    export CC="${CROSS_CC}"
+    export CXX="${CROSS_CXX}"
+    export AR="${CROSS_AR}"
+    export RANLIB="${CROSS_RANLIB}"
+    export DLLTOOL="${CROSS_DLLTOOL}"
+fi
+
 "${SRC_DIR}/mingw-w64/mingw-w64-libraries/winpthreads/configure" \
     --host="${TARGET}" \
     --prefix="${MINGW_PREFIX}" \

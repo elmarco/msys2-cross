@@ -32,6 +32,7 @@ make install DESTDIR="${DESTDIR}"
 _sysroot="${DESTDIR}/usr/${TARGET}"
 _prefix="${DESTDIR}${MINGW_PREFIX}"
 
+mkdir -p "${_sysroot}"
 ln -sfn "${_prefix}/include" "${_sysroot}/include"
 
 # Move binutils' lib content (ldscripts) into the sysroot and replace
