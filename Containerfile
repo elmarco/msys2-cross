@@ -1,59 +1,99 @@
-# MSYS2 Linux Bootstrap — Cross-compilation container for UCRT64
+# MSYS2 Linux Bootstrap — Cross-compilation container
 #
-# Builds a GCC cross-compiler targeting x86_64-w64-mingw32 (UCRT) from source,
-# then sets up makepkg-mingw so MSYS2 MINGW-packages PKGBUILDs can be built
-# on Linux without modification.
+# Builds a cross-compiler targeting Windows from source, then sets up
+# makepkg-mingw so MSYS2 MINGW-packages PKGBUILDs can be built on Linux.
 #
 # Usage:
-#   podman build -t msys2-cross .
-#   podman run -v ./MINGW-packages:/src msys2-cross bash -c \
-#       "cd mingw-w64-zlib && makepkg-mingw -sLf"
+#   podman build --build-arg MSYSTEM=UCRT64 -t msys2-cross-ucrt64 .
+#   podman build --build-arg MSYSTEM=CLANG64 --build-arg MINGW_PREFIX=/clang64 \
+#       --build-arg TARGET=x86_64-w64-mingw32 -t msys2-cross-clang64 .
+
+ARG MSYSTEM=UCRT64
+ARG MINGW_PREFIX=/ucrt64
+ARG TARGET=x86_64-w64-mingw32
+ARG CC_FAMILY=gcc
+ARG RUST_TARGET=x86_64-pc-windows-gnu
+ARG MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
 
 # ===========================================================================
 # Stage 1: Build the cross-toolchain from source
 # ===========================================================================
 FROM fedora:latest AS toolchain-builder
+ARG MSYSTEM
+ARG CC_FAMILY
 
 COPY scripts/ /opt/msys2-cross/scripts/
 COPY sources/ /build/sources/
-RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh \
-    && bash /opt/msys2-cross/scripts/01-build-binutils.sh \
-    && bash /opt/msys2-cross/scripts/02-build-headers.sh \
-    && bash /opt/msys2-cross/scripts/03-build-gcc-bootstrap.sh \
-    && bash /opt/msys2-cross/scripts/04-build-crt.sh \
-    && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
-    && bash /opt/msys2-cross/scripts/06-build-gcc-final.sh
-RUN bash /opt/msys2-cross/scripts/07-build-rust-cross.sh \
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/00-install-host-deps.sh \
+    && if [ "$CC_FAMILY" = "gcc" ]; then \
+           bash /opt/msys2-cross/scripts/01-build-binutils.sh \
+        && bash /opt/msys2-cross/scripts/02-build-headers.sh \
+        && bash /opt/msys2-cross/scripts/03-build-gcc-bootstrap.sh \
+        && bash /opt/msys2-cross/scripts/04-build-crt.sh \
+        && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
+        && bash /opt/msys2-cross/scripts/06-build-gcc-final.sh; \
+       else \
+           bash /opt/msys2-cross/scripts/03-build-llvm.sh \
+        && bash /opt/msys2-cross/scripts/02-build-headers.sh \
+        && bash /opt/msys2-cross/scripts/04-build-crt.sh \
+        && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
+        && bash /opt/msys2-cross/scripts/03-build-llvm-runtimes.sh; \
+       fi
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/07-build-rust-cross.sh \
     && rm -rf /build
 
 # ===========================================================================
 # Stage 2: Assemble the final cross-compilation environment
 # ===========================================================================
 FROM fedora:latest AS msys2-cross
+ARG MSYSTEM
+ARG MINGW_PREFIX
+ARG TARGET
+ARG CC_FAMILY
+ARG RUST_TARGET
+ARG MINGW_PACKAGE_PREFIX
 
 # Install host build dependencies (split: base + extras)
-COPY scripts/common.sh scripts/00-install-host-deps.sh scripts/00-install-extra-deps.sh /opt/msys2-cross/scripts/
+COPY scripts/common.sh scripts/env-config.sh scripts/00-install-host-deps.sh scripts/00-install-extra-deps.sh /opt/msys2-cross/scripts/
 RUN bash /opt/msys2-cross/scripts/00-install-host-deps.sh
 RUN bash /opt/msys2-cross/scripts/00-install-extra-deps.sh
 
-# Copy cross-toolchain from builder stage (GCC + Rust std)
-COPY --from=toolchain-builder /ucrt64 /ucrt64
-COPY --from=toolchain-builder /usr/bin/x86_64-w64-mingw32-* /usr/bin/
-COPY --from=toolchain-builder /usr/x86_64-w64-mingw32 /usr/x86_64-w64-mingw32
-COPY --from=toolchain-builder /usr/lib64/gcc/x86_64-w64-mingw32 /usr/lib64/gcc/x86_64-w64-mingw32
-COPY --from=toolchain-builder /usr/libexec/gcc/x86_64-w64-mingw32 /usr/libexec/gcc/x86_64-w64-mingw32
-COPY --from=toolchain-builder /usr/lib/rustlib/x86_64-pc-windows-gnu /usr/lib/rustlib/x86_64-pc-windows-gnu
+# Copy cross-toolchain from builder stage
+COPY --from=toolchain-builder ${MINGW_PREFIX} ${MINGW_PREFIX}
+COPY --from=toolchain-builder /usr/bin/${TARGET}-* /usr/bin/
+COPY --from=toolchain-builder /usr/${TARGET} /usr/${TARGET}
+COPY --from=toolchain-builder /usr/lib/rustlib/${RUST_TARGET} /usr/lib/rustlib/${RUST_TARGET}
 
-# Recreate sysroot symlinks (include/lib point into /ucrt64)
-# Also add build tool wrappers where PKGBUILDs expect them
-RUN mkdir -p /usr/x86_64-w64-mingw32 /ucrt64/bin \
-    && ln -sfn /ucrt64/include /usr/x86_64-w64-mingw32/include \
-    && ln -sfn /ucrt64/lib /usr/x86_64-w64-mingw32/lib \
-    && ln -sfn /opt/msys2-cross/wrappers/mingw-cmake /ucrt64/bin/cmake \
-    && ln -sfn /opt/msys2-cross/wrappers/mingw-meson /ucrt64/bin/meson \
-    && ln -sfn /opt/msys2-cross/wrappers/mingw-meson /ucrt64/bin/meson.exe \
-    && ln -sfn /opt/msys2-cross/wrappers/mingw-pkg-config /ucrt64/bin/x86_64-w64-mingw32-pkg-config \
-    && ln -sfn /usr/bin/x86_64-w64-mingw32-gcc /ucrt64/bin/cc
+# GCC-specific paths (only exist when CC_FAMILY=gcc)
+RUN --mount=from=toolchain-builder,source=/,target=/builder \
+    if [ "${CC_FAMILY}" = "gcc" ]; then \
+        mkdir -p /usr/lib64/gcc /usr/libexec/gcc \
+        && cp -a /builder/usr/lib64/gcc/${TARGET} /usr/lib64/gcc/ \
+        && cp -a /builder/usr/libexec/gcc/${TARGET} /usr/libexec/gcc/; \
+    fi
+
+# LLVM tools (only exist when CC_FAMILY=clang)
+RUN --mount=from=toolchain-builder,source=/,target=/builder \
+    if [ "${CC_FAMILY}" = "clang" ]; then \
+        cp -a /builder/usr/bin/clang* /builder/usr/bin/lld* \
+              /builder/usr/bin/llvm-* /builder/usr/bin/ld.lld* \
+              /usr/bin/ 2>/dev/null || true; \
+        cp -a /builder/usr/lib/clang /usr/lib/clang 2>/dev/null || true; \
+    fi
+
+# Recreate sysroot symlinks and build tool wrappers
+RUN export MSYSTEM=${MSYSTEM} \
+    && source /opt/msys2-cross/scripts/env-config.sh \
+    && mkdir -p /usr/${TARGET} ${MINGW_PREFIX}/bin \
+    && ln -sfn ${MINGW_PREFIX}/include /usr/${TARGET}/include \
+    && ln -sfn ${MINGW_PREFIX}/lib /usr/${TARGET}/lib \
+    && ln -sfn /opt/msys2-cross/wrappers/mingw-cmake ${MINGW_PREFIX}/bin/cmake \
+    && ln -sfn /opt/msys2-cross/wrappers/mingw-meson ${MINGW_PREFIX}/bin/meson \
+    && ln -sfn /opt/msys2-cross/wrappers/mingw-meson ${MINGW_PREFIX}/bin/meson.exe \
+    && ln -sfn /opt/msys2-cross/wrappers/mingw-pkg-config ${MINGW_PREFIX}/bin/${TARGET}-pkg-config \
+    && ln -sfn /usr/bin/${CROSS_CC} ${MINGW_PREFIX}/bin/cc
 
 # Install build infrastructure
 COPY config/ /opt/msys2-cross/config/
@@ -63,19 +103,21 @@ COPY packages/ /opt/msys2-cross/packages/
 RUN chmod +x /opt/msys2-cross/wrappers/* \
     && chmod +x /opt/msys2-cross/config/makepkg-mingw
 
-# Set up pacman and package the toolchain
+# Set up pacman, generate configs, and package the toolchain
 COPY scripts/08-setup-pacman.sh /opt/msys2-cross/scripts/
-RUN bash /opt/msys2-cross/scripts/08-setup-pacman.sh
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/08-setup-pacman.sh
 
-# Build base libraries (libiconv, gettext) that MSYS2 packages implicitly need
-COPY scripts/09-build-base-libs.sh /opt/msys2-cross/scripts/
-RUN bash /opt/msys2-cross/scripts/09-build-base-libs.sh
+# Build base libraries (libiconv, gettext)
+COPY scripts/09-build-base-libs.sh scripts/lib-mingw-pkg.sh /opt/msys2-cross/scripts/
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/09-build-base-libs.sh
 
 # Environment setup
-ENV MSYSTEM=UCRT64
-ENV MINGW_PREFIX=/ucrt64
-ENV MINGW_CHOST=x86_64-w64-mingw32
-ENV MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
+ENV MSYSTEM=${MSYSTEM}
+ENV MINGW_PREFIX=${MINGW_PREFIX}
+ENV MINGW_CHOST=${TARGET}
+ENV MINGW_PACKAGE_PREFIX=${MINGW_PACKAGE_PREFIX}
 ENV PATH="/opt/msys2-cross/wrappers:/opt/msys2-cross/config:${PATH}"
 
 # Configure Cargo for Rust cross-compilation

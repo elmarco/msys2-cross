@@ -5,13 +5,33 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="${SCRIPT_DIR}"
 source "${SCRIPT_DIR}/scripts/lib-mingw-pkg.sh"
 
-BOOTSTRAP_IMAGE="msys2-cross"
-WORK_IMAGE="msys2-cross-work"
+# Parse --msystem early (before command dispatch)
+_msys2_cross_args=()
+for arg in "$@"; do
+    case "$arg" in
+        --msystem=*) export MSYSTEM="${arg#--msystem=}" ;;
+        *) _msys2_cross_args+=("$arg") ;;
+    esac
+done
+set -- "${_msys2_cross_args[@]}"
+
+# Source environment config (uses MSYSTEM, defaults to UCRT64)
+source "${SCRIPT_DIR}/scripts/env-config.sh"
+
+BOOTSTRAP_IMAGE="msys2-cross-${MSYSTEM_LOWER}"
+WORK_IMAGE="msys2-cross-${MSYSTEM_LOWER}-work"
 PACMAN_CONF="/opt/msys2-cross/config/pacman-mingw.conf"
 LOG_DIR="${SCRIPT_DIR}/logs"
 
 build_image() {
-    TMPDIR=/var/tmp podman build -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
+    TMPDIR=/var/tmp podman build \
+        --build-arg MSYSTEM="${MSYSTEM}" \
+        --build-arg MINGW_PREFIX="${MINGW_PREFIX}" \
+        --build-arg TARGET="${TARGET}" \
+        --build-arg CC_FAMILY="${CC_FAMILY}" \
+        --build-arg RUST_TARGET="${RUST_TARGET}" \
+        --build-arg MINGW_PACKAGE_PREFIX="${MINGW_PACKAGE_PREFIX}" \
+        -t "${BOOTSTRAP_IMAGE}" "${SCRIPT_DIR}"
 }
 
 # Common bind mounts for all container runs
@@ -29,7 +49,12 @@ fi
 
 usage() {
     cat <<'EOF'
-Usage: msys2-cross <command> [args...]
+Usage: msys2-cross [--msystem=ENV] <command> [args...]
+
+Environment (default: UCRT64):
+  --msystem=UCRT64      GCC cross-compiler for x86_64 (default)
+  --msystem=CLANG64     Clang/LLVM cross-compiler for x86_64
+  --msystem=CLANGARM64  Clang/LLVM cross-compiler for aarch64
 
 Commands:
   setup [--force]       First-time setup: download sources, build bootstrap
@@ -251,7 +276,7 @@ cmd_setup() {
         esac
     done
 
-    msg "Setting up msys2-cross..."
+    msg "Setting up msys2-cross [${MSYSTEM}]..."
 
     # Download sources
     if [[ ! -d "${SCRIPT_DIR}/sources" ]] || [[ -z "$(ls -A "${SCRIPT_DIR}/sources" 2>/dev/null)" ]]; then
@@ -457,10 +482,10 @@ cmd_shell() {
     ensure_image
     local image
     image="$(current_image)"
-    msg "Entering msys2-cross shell (image=${image})"
-    echo "  Sysroot:  /ucrt64"
+    msg "Entering msys2-cross shell [${MSYSTEM}] (image=${image})"
+    echo "  Sysroot:  ${MINGW_PREFIX}"
     echo "  Packages: /src"
-    echo "  Compiler: x86_64-w64-mingw32-gcc"
+    echo "  Compiler: ${CROSS_CC}"
     echo ""
     prun "${prun_args[@]}" bash
 }
