@@ -96,35 +96,45 @@ prun() {
         "$(current_image)" "$@"
 }
 
-# Recursively find all missing deps (transitive). Checkouts all needed
-# packages on the host, then does the full walk in a single podman run.
+# Recursively find all missing deps (transitive). Iteratively runs the
+# container-side resolver, checks out any packages it requests, and
+# re-runs until no new checkouts are needed.
 # Returns source package names in topological (build) order.
 find_all_missing_deps() {
     local root_pkg="$1"
+    local max_iterations=20
 
-    # Breadth-first checkout on the host (fast git operations, no podman overhead)
-    local -A checked_out=()
-    local queue=("$root_pkg")
-    while [[ ${#queue[@]} -gt 0 ]]; do
-        local pkg="${queue[0]}"
-        queue=("${queue[@]:1}")
-        [[ -n "${checked_out[$pkg]+x}" ]] && continue
-        checked_out[$pkg]=1
-        checkout_pkg "$pkg" >/dev/null 2>&1 || continue
-        local srcdir="${_checkout_actual}"
-        if [[ -f "${MINGW_PACKAGES_DIR}/${srcdir}/PKGBUILD" ]]; then
-            grep -oP '\$\{MINGW_PACKAGE_PREFIX\}-\K[a-z0-9_-]+' \
-                "${MINGW_PACKAGES_DIR}/${srcdir}/PKGBUILD" 2>/dev/null | \
-                sort -u | while read -r dep_name; do
-                    local dep_pkg="mingw-w64-${dep_name}"
-                    if [[ -z "${checked_out[$dep_pkg]+x}" ]]; then
-                        echo "$dep_pkg"
-                    fi
-                done | while read -r p; do queue+=("$p"); done
+    for (( i=1; i<=max_iterations; i++ )); do
+        local stderr_file
+        stderr_file=$(mktemp)
+
+        local result
+        result=$(prun bash /opt/msys2-cross/scripts/resolve-deps.sh "${root_pkg}" 2>"${stderr_file}") || true
+
+        local needed
+        needed=$(grep '^NEED_CHECKOUT:' "${stderr_file}" | sed 's/^NEED_CHECKOUT://' | sort -u)
+        rm -f "${stderr_file}"
+
+        if [[ -z "$needed" ]]; then
+            echo "$result"
+            return
+        fi
+
+        local checked_out_any=0
+        for pkg in $needed; do
+            if checkout_pkg "$pkg" >/dev/null 2>&1; then
+                checked_out_any=1
+            fi
+        done
+
+        if [[ "$checked_out_any" -eq 0 ]]; then
+            echo "$result"
+            return
         fi
     done
 
-    prun bash /opt/msys2-cross/scripts/resolve-deps.sh "${root_pkg}" 2>/dev/null
+    warn "Dependency resolution did not converge after ${max_iterations} iterations"
+    echo "$result"
 }
 
 cmd_download() {

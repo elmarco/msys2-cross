@@ -61,7 +61,9 @@ After rewrites, **validation warnings** are emitted for patterns that should hav
 
 `scripts/resolve-deps.sh` runs inside the container. It performs a DFS traversal of package dependencies, using pacman to check what's already installed.
 
-**Output format** (consumed by `cmd_build` in `msys2-cross`):
+**Iterative checkout loop**: The host-side `find_all_missing_deps()` runs the resolver iteratively. When the resolver encounters a package whose source directory doesn't exist under `/src`, it emits `NEED_CHECKOUT:<pkg>` to stderr. The host catches these, runs `checkout_pkg` for each, and re-runs the resolver. This converges because each iteration can only add packages. The loop terminates when no new checkouts are needed, or no requested checkouts succeed (package doesn't exist in MINGW-packages), or after 20 iterations (safety cap).
+
+**Output format** (stdout, consumed by `cmd_build` in `msys2-cross`):
 ```
 pkg-a
 pkg-b

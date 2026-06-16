@@ -83,7 +83,7 @@ podman run --rm -v $PWD/MINGW-packages:/src msys2-cross \
 | Component | Version | What it does |
 |---|---|---|
 | GCC | 16.1.0 | Cross-compiler (`x86_64-w64-mingw32-gcc`) |
-| binutils | 2.46 | Cross-linker, assembler, etc. |
+| binutils | 2.46.1 | Cross-linker, assembler, etc. |
 | mingw-w64 | 14.0.0 | Windows headers and CRT (UCRT) |
 | Rust | 1.96.0 | Cross-compiled `std` for `x86_64-pc-windows-gnu` |
 | makepkg-mingw | — | Adapted MSYS2 build driver |
