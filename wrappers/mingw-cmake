@@ -1,10 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-# CMake wrapper for UCRT64 cross-compilation.
-# Replaces MSYS2's mingw-w64-ucrt-x86_64-cmake wrapper.
-#
-# Detects cmake subcommands (--build, --install) that don't need
-# cross-compilation flags and passes them through directly.
+# CMake wrapper for cross-compilation.
+# Uses the generated toolchain file for cross-compiler settings.
+# Detects cmake subcommands that don't need cross flags.
 
 case "${1:-}" in
     --build|--install|--open|--preset)
@@ -13,17 +11,5 @@ case "${1:-}" in
 esac
 
 exec /usr/bin/cmake \
-    -DCMAKE_SYSTEM_NAME=Windows \
-    -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
-    -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-    -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
-    -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
-    -DCMAKE_AR=/usr/bin/x86_64-w64-mingw32-ar \
-    -DCMAKE_RANLIB=/usr/bin/x86_64-w64-mingw32-ranlib \
-    -DCMAKE_FIND_ROOT_PATH=/ucrt64 \
-    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-    -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-    -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
-    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
-    -DCMAKE_INSTALL_PREFIX=/ucrt64 \
+    -DCMAKE_TOOLCHAIN_FILE=/opt/msys2-cross/generated/toolchain.cmake \
     "$@"

@@ -1,0 +1,23 @@
+[binaries]
+c = '@CROSS_CC@'
+cpp = '@CROSS_CXX@'
+ar = '@CROSS_AR@'
+strip = '@CROSS_STRIP@'
+dlltool = '@CROSS_DLLTOOL@'
+windres = '@CROSS_WINDRES@'
+pkgconfig = '/opt/msys2-cross/wrappers/mingw-pkg-config'
+rust = ['rustc', '--target', '@RUST_TARGET@']
+
+[properties]
+sys_root = '@MINGW_PREFIX@'
+pkg_config_libdir = '@MINGW_PREFIX@/lib/pkgconfig:@MINGW_PREFIX@/share/pkgconfig'
+
+[host_machine]
+system = 'windows'
+cpu_family = '@MESON_CPU_FAMILY@'
+cpu = '@MESON_CPU_FAMILY@'
+endian = 'little'
+
+[built-in options]
+c_args = [@MESON_C_ARGS@]
+cpp_args = [@MESON_C_ARGS@]

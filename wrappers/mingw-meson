@@ -16,8 +16,10 @@ case "${1:-}" in
         ;;
 esac
 
+source /opt/msys2-cross/config/mingw-env.sh
+
 exec /usr/bin/meson setup \
-    --cross-file /opt/msys2-cross/config/cross-file.meson \
+    --cross-file /opt/msys2-cross/generated/cross-file.meson \
     --native-file /opt/msys2-cross/config/native-file.meson \
-    --prefix /ucrt64 \
+    --prefix "${MINGW_PREFIX}" \
     "$@"

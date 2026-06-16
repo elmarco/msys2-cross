@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-# pkg-config wrapper for UCRT64 cross-compilation.
-export PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
-export PKG_CONFIG_SYSROOT_DIR="/ucrt64"
-export PKG_CONFIG_LIBDIR="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
+# pkg-config wrapper for cross-compilation.
+source /opt/msys2-cross/config/mingw-env.sh
+export PKG_CONFIG_PATH="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgconfig"
+export PKG_CONFIG_SYSROOT_DIR="${MINGW_PREFIX}"
+export PKG_CONFIG_LIBDIR="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgconfig"
 exec /usr/bin/pkg-config "$@"

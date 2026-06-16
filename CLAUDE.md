@@ -17,7 +17,7 @@ These are load-bearing — violating them breaks the build:
 - **Cross-compiler in `/usr/bin/`**: Standard `x86_64-w64-mingw32-gcc` naming. GCC discovers the sysroot via symlinks `/usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}`. The dir `/usr/x86_64-w64-mingw32/bin/` is created by binutils, so the symlink trick replaces only `include` and `lib`.
 - **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf. All pacman commands must use `--config /opt/msys2-cross/config/pacman-mingw.conf`.
 - **CC must NOT be exported globally**: `config/mingw-env.sh` intentionally does NOT export CC/CXX. Autotools finds the cross-compiler via `--host=${MINGW_CHOST}`. Setting CC globally breaks `config.guess` (it uses `$CC -dumpmachine` and misidentifies the build machine).
-- **Cargo offline mode**: `config/cargo-cross.toml` sets `[net] offline = true`. Host cargo registry is bind-mounted read-only into the container.
+- **Cargo offline mode**: `config/cargo-cross.toml.in` (template) generates `generated/cargo-cross.toml` at build time; sets `[net] offline = true`. Host cargo registry is bind-mounted read-only into the container.
 - **Fedora uses `lib64`**: GCC installs to `/usr/lib64/gcc/` not `/usr/lib/gcc/`. The Containerfile accounts for this.
 
 ## Pitfalls
@@ -50,10 +50,10 @@ After rewrites, **validation warnings** are emitted for patterns that should hav
 
 ## Wrapper behavior
 
-- **`mingw-meson`**: Uses `config/cross-file.meson`. Detects subcommands — `compile`/`install`/`test` bypass cross-file injection. Detects old-style implicit `setup` (no subcommand) and injects cross-file automatically.
-- **`mingw-cmake`**: Sets toolchain file via `-DCMAKE_TOOLCHAIN_FILE`. Detects `--build`/`--install`/`--open`/`--preset` subcommands and bypasses cross-flags for those.
-- **`mingw-pkg-config`**: Sets `PKG_CONFIG_LIBDIR` to `/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig` so pkg-config finds cross-compiled `.pc` files.
-- **`native-pkg-config`**: Resets `PKG_CONFIG_LIBDIR` to system paths (`/usr/lib64/pkgconfig:/usr/share/pkgconfig`). Used for native build-time dependencies so they don't accidentally pick up cross `.pc` files. Referenced in `config/cross-file.meson`.
+- **`mingw-meson`**: Uses `generated/cross-file.meson` (built from `config/cross-file.meson.in`). Sources `mingw-env.sh` for `MINGW_PREFIX`. Detects subcommands — `compile`/`install`/`test` bypass cross-file injection. Detects old-style implicit `setup` (no subcommand) and injects cross-file automatically.
+- **`mingw-cmake`**: Uses `generated/toolchain.cmake` (built from `config/toolchain.cmake.in`) via `-DCMAKE_TOOLCHAIN_FILE`. Detects `--build`/`--install`/`--open`/`--preset` subcommands and bypasses cross-flags for those.
+- **`mingw-pkg-config`**: Sources `mingw-env.sh` and sets `PKG_CONFIG_LIBDIR` to `${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgconfig` so pkg-config finds cross-compiled `.pc` files.
+- **`native-pkg-config`**: Resets `PKG_CONFIG_LIBDIR` to system paths (`/usr/lib64/pkgconfig:/usr/share/pkgconfig`). Used for native build-time dependencies so they don't accidentally pick up cross `.pc` files. Referenced in `generated/cross-file.meson`.
 - **`cygpath`**: No-op shim that returns its input unchanged. MSYS2 PKGBUILDs call `cygpath -m` to convert Unix paths to Windows paths — on Linux, paths are already correct.
 - **`pacman-mingw`**: Wrapper that always passes `--config /opt/msys2-cross/config/pacman-mingw.conf`.
 

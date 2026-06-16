@@ -80,8 +80,8 @@ ENV PATH="/opt/msys2-cross/wrappers:/opt/msys2-cross/config:${PATH}"
 
 # Configure Cargo for Rust cross-compilation
 RUN mkdir -p /root/.cargo /home/builduser/.cargo \
-    && ln -sf /opt/msys2-cross/config/cargo-cross.toml /root/.cargo/config.toml \
-    && ln -sf /opt/msys2-cross/config/cargo-cross.toml /home/builduser/.cargo/config.toml \
+    && ln -sf /opt/msys2-cross/generated/cargo-cross.toml /root/.cargo/config.toml \
+    && ln -sf /opt/msys2-cross/generated/cargo-cross.toml /home/builduser/.cargo/config.toml \
     && chown -R builduser: /home/builduser/.cargo
 
 # Clean up build artifacts

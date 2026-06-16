@@ -9,6 +9,46 @@ echo "========================================="
 # Separate from DESTDIR to avoid polluting common.sh's PATH/env.
 _ROOT="${INSTALL_ROOT:-}"
 
+# --- Generate config files from templates ---
+source "${_ROOT}/opt/msys2-cross/scripts/env-config.sh"
+
+_generate_config() {
+    local template="$1"
+    local output="$2"
+    mkdir -p "$(dirname "$output")"
+
+    # Build meson c_args from CROSS_CFLAGS
+    local meson_c_args=""
+    for flag in ${CROSS_CFLAGS}; do
+        [[ -n "$meson_c_args" ]] && meson_c_args+=", "
+        meson_c_args+="'${flag}'"
+    done
+
+    sed \
+        -e "s|@CROSS_CC@|${CROSS_CC}|g" \
+        -e "s|@CROSS_CXX@|${CROSS_CXX}|g" \
+        -e "s|@CROSS_AR@|${CROSS_AR}|g" \
+        -e "s|@CROSS_STRIP@|${CROSS_STRIP}|g" \
+        -e "s|@CROSS_RANLIB@|${CROSS_RANLIB}|g" \
+        -e "s|@CROSS_WINDRES@|${CROSS_WINDRES}|g" \
+        -e "s|@CROSS_DLLTOOL@|${CROSS_DLLTOOL}|g" \
+        -e "s|@MINGW_PREFIX@|${MINGW_PREFIX}|g" \
+        -e "s|@RUST_TARGET@|${RUST_TARGET}|g" \
+        -e "s|@CMAKE_SYSTEM_PROCESSOR@|${CMAKE_SYSTEM_PROCESSOR}|g" \
+        -e "s|@MESON_CPU_FAMILY@|${MESON_CPU_FAMILY}|g" \
+        -e "s|@MESON_C_ARGS@|${meson_c_args}|g" \
+        "$template" > "$output"
+}
+
+GENERATED_DIR="${_ROOT}/opt/msys2-cross/generated"
+TEMPLATE_DIR="${_ROOT}/opt/msys2-cross/config"
+
+_generate_config "${TEMPLATE_DIR}/cross-file.meson.in" "${GENERATED_DIR}/cross-file.meson"
+_generate_config "${TEMPLATE_DIR}/toolchain.cmake.in" "${GENERATED_DIR}/toolchain.cmake"
+_generate_config "${TEMPLATE_DIR}/cargo-cross.toml.in" "${GENERATED_DIR}/cargo-cross.toml"
+
+echo "==> Generated config files in ${GENERATED_DIR}/"
+
 REPO_DIR=${_ROOT}/opt/msys2-cross/repo
 PKG_DIR=${_ROOT}/opt/msys2-cross/packages
 
