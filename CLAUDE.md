@@ -7,14 +7,17 @@ This file is for AI assistants and code generators. User-facing documentation is
 - **Offline builds**: Containers run with `--network=none`. All sources must be pre-downloaded on the host. Never add network-dependent steps to build scripts.
 - **No PKGBUILD modifications on disk**: `makepkg-mingw` works on a copy (`cp PKGBUILD PKGBUILD.orig`, restore after build). Patches must not corrupt the original. Use `sed` replacements that preserve array structure — never delete lines from the middle of bash arrays.
 - **Bind-mount workflow**: Users clone MINGW-packages on the host and mount into the container. The container never clones repos itself.
-- **Target**: UCRT64 only (`x86_64-w64-mingw32`, UCRT C runtime).
+- **Target environments**: UCRT64 (GCC, x86_64), CLANG64 (Clang/LLVM, x86_64), CLANGARM64 (Clang/LLVM, aarch64). Selected via `--msystem` flag. One container image per environment.
 
 ## Architecture decisions
 
 These are load-bearing — violating them breaks the build:
 
-- **Sysroot at `/ucrt64`**: Matches MSYS2's `MINGW_PREFIX` so PKGBUILDs work unmodified.
-- **Cross-compiler in `/usr/bin/`**: Standard `x86_64-w64-mingw32-gcc` naming. GCC discovers the sysroot via symlinks `/usr/x86_64-w64-mingw32/{include,lib} → /ucrt64/{include,lib}`. The dir `/usr/x86_64-w64-mingw32/bin/` is created by binutils, so the symlink trick replaces only `include` and `lib`.
+- **Sysroot at `MINGW_PREFIX`**: `/ucrt64` for UCRT64, `/clang64` for CLANG64, `/clangarm64` for CLANGARM64. Matches MSYS2's conventions so PKGBUILDs work unmodified.
+- **Central `env-config.sh`**: `scripts/env-config.sh` maps `MSYSTEM` → all derived variables (TARGET, MINGW_PREFIX, CC_FAMILY, CROSS_CC, etc.). All build scripts, wrappers, and the CLI source this module.
+- **Config generation from `.in` templates**: Non-shell configs (meson cross-file, cmake toolchain, cargo config) are generated from `config/*.in` templates by `08-setup-pacman.sh` at container build time. Output goes to `/opt/msys2-cross/generated/`.
+- **Cross-compiler in `/usr/bin/`**: Standard `${TARGET}-gcc` (GCC) or `${TARGET}-clang` (LLVM) naming. Sysroot discovery via symlinks `/usr/${TARGET}/{include,lib} → ${MINGW_PREFIX}/{include,lib}`.
+- **Per-environment images**: `msys2-cross-ucrt64`, `msys2-cross-clang64`, `msys2-cross-clangarm64`. The Containerfile uses ARG directives; the CLI passes `--build-arg` to podman.
 - **pacman with separate DB** (`/var/lib/pacman/mingw/`): Isolates from Fedora's dnf. All pacman commands must use `--config /opt/msys2-cross/config/pacman-mingw.conf`.
 - **CC must NOT be exported globally**: `config/mingw-env.sh` intentionally does NOT export CC/CXX. Autotools finds the cross-compiler via `--host=${MINGW_CHOST}`. Setting CC globally breaks `config.guess` (it uses `$CC -dumpmachine` and misidentifies the build machine).
 - **Cargo offline mode**: `config/cargo-cross.toml.in` (template) generates `generated/cargo-cross.toml` at build time; sets `[net] offline = true`. Host cargo registry is bind-mounted read-only into the container.
@@ -26,12 +29,12 @@ Things that have caused real bugs — check these before modifying related code:
 
 - **pkg-config/pkgconf recursion**: Do NOT symlink pkg-config or pkgconf into `/ucrt64/bin`. Fedora's pkgconf finds itself via PATH and hangs in infinite recursion. Use the meson cross file's `pkgconfig =` entry instead.
 - **Container UID mapping**: Running with `-v host:container:rw` may create files owned by container UIDs (100999). Use `podman unshare chown` to fix, or mount `:ro` when possible.
-- **Strip tool**: `makepkg_mingw.conf` sets `STRIP=/usr/bin/x86_64-w64-mingw32-strip`. If PE binaries come out corrupted, verify this is being picked up by makepkg.
+- **Strip tool**: `makepkg_mingw.conf` sets `STRIP=/usr/bin/${CROSS_STRIP}`. If PE binaries come out corrupted, verify this is being picked up by makepkg.
 - **Meson boolean vs feature options**: Meson `feature` options take `enabled`/`disabled`/`auto`. Meson `boolean` options take `true`/`false`. Using the wrong type silently fails. When writing patches, check the `meson_options.txt` or `meson.options` in the package.
 - **`--build` flag in PKGBUILDs**: Many MSYS2 PKGBUILDs pass `--build=${MINGW_CHOST}` to configure, which is correct on MSYS2 (build machine IS mingw32) but wrong for cross-compilation. `makepkg-mingw` auto-rewrites this, but packages with custom configure (GMP) may still fail.
 - **Meson implicit setup**: Some PKGBUILDs call `meson` without the `setup` subcommand (old-style). The `mingw-meson` wrapper detects this and injects `--cross-file`. If a build says `Build type: native build`, the wrapper isn't being used.
 - **Fedora makepkg `---mirror` bug**: Fedora's patched makepkg passes `---mirror` (triple dash) to curl, which curl rejects. The SRPM generator works around this with a curl wrapper that strips triple-dash args.
-- **Build tools as dummy packages**: Host-only tools like `gperf`, `ragel`, `nasm` that generate source code should be in `dummy-packages.list`, not cross-compiled. If a `BuildRequires` for `mingw-w64-ucrt-x86_64-<tool>` appears in a generated spec and that tool is installed on the host, it's probably missing from the dummy list.
+- **Build tools as dummy packages**: Host-only tools like `gperf`, `ragel`, `nasm` that generate source code should be in `dummy-packages.list`, not cross-compiled. If a `BuildRequires` for `${MINGW_PACKAGE_PREFIX}-<tool>` appears in a generated spec and that tool is installed on the host, it's probably missing from the dummy list.
 
 ## makepkg-mingw auto-rewrite patterns
 
@@ -41,7 +44,7 @@ Things that have caused real bugs — check these before modifying related code:
 2. **`--build=${MINGW_CHOST}` fix**: Rewrites to `--build=<linux-triple>` (handles `${MINGW_CHOST}`, `"${MINGW_CHOST}"`, and `${CHOST}` forms)
 3. **`CHOST=${MINGW_CHOST}` pattern** (zlib-style configure): Replaces with `CC=${MINGW_CHOST}-gcc` + `--host`/`--build` flags. Handles both single-line and multi-line (backslash continuation)
 4. **Meson references**: Routes `meson setup` to `mingw-meson` wrapper, `meson compile`/`install` to `/usr/bin/meson`. Handles `${MINGW_PREFIX}/bin/meson.exe`, bare `meson`, and both quoting styles
-5. **CMake references**: Rewrites `${MINGW_PREFIX}/bin/cmake(.exe)` to `/ucrt64/bin/cmake` (which is the `mingw-cmake` wrapper)
+5. **CMake references**: Rewrites `${MINGW_PREFIX}/bin/cmake(.exe)` to `${MINGW_PREFIX}/bin/cmake` (which is the `mingw-cmake` wrapper)
 6. **`MSYS2_ARG_CONV_EXCL` removal**: Strips all forms (env prefix with continuation, inline prefix, standalone export). MSYS2-only path conversion suppression, not needed on Linux
 7. **Python exe references**: Rewrites `${MINGW_PREFIX}/bin/python3(.exe)` → `/usr/bin/python3`. Also rewrites CMake `-DPython3_EXECUTABLE=`, `-DPython_EXECUTABLE=`, `-DPYTHON_EXECUTABLE=`
 8. **`noextract` + manual tar removal**: Removes `noextract=()` arrays and replaces manual `tar -xf` lines with `true` (MSYS2 path workaround not needed on Linux)
@@ -139,7 +142,7 @@ Generates a Fedora-style SRPM from any MSYS2 PKGBUILD:
 ### Dummy package system
 
 Two sources of dummy packages (host tools that don't need cross-compilation):
-1. `config/dummy-packages.list` — explicit list (~120 entries)
+1. `config/dummy-packages.list` — section-aware list (`# [host]`, `# [shared]`, `# [gcc]`, `# [clang]`). Base names without MINGW prefix; prefix is prepended by `08-setup-pacman.sh` at package creation time. GCC/Clang sections are filtered by `CC_FAMILY`.
 2. `packages/` directory — PKGBUILDs for toolchain components, plus their `Provides:` entries
 
 `load_dummy_packages()` merges both. If a MINGW dependency resolves to a dummy package, the resolver skips it.

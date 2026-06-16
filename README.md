@@ -2,7 +2,7 @@
 
 Cross-compile Windows (PE) binaries on Linux using unmodified [MSYS2 MINGW-packages](https://github.com/msys2/MINGW-packages) PKGBUILDs.
 
-Instead of maintaining a separate set of cross-compilation recipes, this project builds a container with a GCC cross-compiler and an adapted `makepkg-mingw` that automatically adjusts MSYS2 PKGBUILDs for Linux cross-compilation. The result is a `.pkg.tar.zst` package identical in layout to what MSYS2 would produce — just built on Linux.
+Instead of maintaining a separate set of cross-compilation recipes, this project builds a container with a cross-compiler (GCC or Clang/LLVM) and an adapted `makepkg-mingw` that automatically adjusts MSYS2 PKGBUILDs for Linux cross-compilation. The result is a `.pkg.tar.zst` package identical in layout to what MSYS2 would produce — just built on Linux.
 
 ## Quick start
 
@@ -23,6 +23,24 @@ Instead of maintaining a separate set of cross-compilation recipes, this project
 The `msys2-cross` script manages a bootstrap image and a working image.
 Installed packages are committed to the working image, so dependency chains
 survive across builds.
+
+### Multi-environment support
+
+```sh
+# Default: UCRT64 (GCC, x86_64)
+./msys2-cross setup
+./msys2-cross build libpng
+
+# CLANG64 (Clang/LLVM, x86_64)
+./msys2-cross --msystem=CLANG64 setup
+./msys2-cross --msystem=CLANG64 build libpng
+
+# CLANGARM64 (Clang/LLVM, aarch64)
+./msys2-cross --msystem=CLANGARM64 setup
+./msys2-cross --msystem=CLANGARM64 build libpng
+```
+
+Each environment uses a separate container image (`msys2-cross-ucrt64`, `msys2-cross-clang64`, etc.) and can coexist.
 
 ## Commands
 
@@ -66,7 +84,7 @@ If you prefer direct `podman` commands:
 ```sh
 # Build the container
 ./scripts/download-sources.sh
-podman build -t msys2-cross .
+podman build --build-arg MSYSTEM=UCRT64 -t msys2-cross-ucrt64 .
 
 # Clone MINGW-packages
 git clone --filter=blob:none --sparse \
@@ -80,14 +98,15 @@ podman run --rm -v $PWD/MINGW-packages:/src msys2-cross \
 
 ## What's in the container
 
-| Component | Version | What it does |
-|---|---|---|
-| GCC | 16.1.0 | Cross-compiler (`x86_64-w64-mingw32-gcc`) |
-| binutils | 2.46.1 | Cross-linker, assembler, etc. |
-| mingw-w64 | 14.0.0 | Windows headers and CRT (UCRT) |
-| Rust | 1.96.0 | Cross-compiled `std` for `x86_64-pc-windows-gnu` |
-| makepkg-mingw | — | Adapted MSYS2 build driver |
-| pacman | 7.x | Package manager for the MINGW sysroot |
+| Component | Version | Environment | What it does |
+|---|---|---|---|
+| GCC | 16.1.0 | UCRT64 | Cross-compiler (`x86_64-w64-mingw32-gcc`) |
+| LLVM/Clang/LLD | 20.1.5 | CLANG64, CLANGARM64 | Cross-compiler + linker |
+| binutils | 2.46.1 | UCRT64 | Cross-linker, assembler, etc. |
+| mingw-w64 | 14.0.0 | all | Windows headers and CRT |
+| Rust | 1.96.0 | all | Cross-compiled `std` for Windows target |
+| makepkg-mingw | — | all | Adapted MSYS2 build driver |
+| pacman | 7.x | all | Package manager for the MINGW sysroot |
 
 Base libraries (libiconv, gettext, zlib, bzip2, xz, zstd, libffi, pcre2, expat) are pre-built during the container build so MSYS2 packages that implicitly depend on them work out of the box.
 
@@ -99,7 +118,7 @@ MSYS2's build model is already quasi-cross-compilation: a POSIX shell drives com
 
 ```
 MSYS2:   bash (msys-2.0.dll) → gcc.exe (Windows) → .dll/.exe
-Linux:   bash (native)       → x86_64-w64-mingw32-gcc (Linux) → .dll/.exe
+Linux:   bash (native)       → cross-compiler (GCC or Clang) → .dll/.exe
 ```
 
 `makepkg-mingw` automatically rewrites PKGBUILDs for cross-compilation:
@@ -248,7 +267,7 @@ See `.copr/Makefile` for automated Copr integration.
 ## Limitations
 
 - **No `.exe` execution** without Wine. ~5-10% of packages run compiled binaries during the build (code generators, test suites). Install Wine and register `binfmt_misc` to handle these.
-- **UCRT64 only** — no support for MSYS, MINGW32, or CLANG64 environments.
+- **Three environments**: UCRT64, CLANG64, and CLANGARM64. No support for MSYS or MINGW32 (32-bit).
 - **GObject introspection** requires running `g-ir-scanner` which executes Windows binaries. Disabled by default via patches.
 
 ## Testing
@@ -310,6 +329,7 @@ Containerfile                    Multi-stage container build
 scripts/
   download-sources.sh            Pre-download toolchain tarballs
   common.sh                      Version pins and shared variables
+  env-config.sh                 Central MSYSTEM → variable mapping
   00-install-host-deps.sh        Fedora packages (gcc, cmake, meson, ...)
   00-install-extra-deps.sh       Additional host dependencies
   01-build-binutils.sh           Cross-binutils
@@ -318,6 +338,8 @@ scripts/
   04-build-crt.sh                MinGW-w64 CRT (UCRT)
   05-build-winpthreads.sh        POSIX threads for Windows
   06-build-gcc-final.sh          Final GCC (C, C++, LTO)
+  03-build-llvm.sh              LLVM/Clang/LLD (CLANG64/CLANGARM64 only)
+  03-build-llvm-runtimes.sh     compiler-rt, libunwind, libc++ (CLANG64/CLANGARM64 only)
   07-build-rust-cross.sh         Rust cross-compilation toolchain
   08-setup-pacman.sh             Package toolchain as pacman packages
   09-build-base-libs.sh          Base libraries (libiconv, gettext, ...)
@@ -331,10 +353,10 @@ config/
   makepkg-download.conf          makepkg config for host-side source downloads
   pacman-mingw.conf              pacman config (separate DB at /var/lib/pacman/mingw/)
   dummy-packages.list            Host-provided tools registered as dummy pacman pkgs
-  cross-file.meson               Meson cross-compilation file
+  cross-file.meson.in            Meson cross-compilation template
   native-file.meson              Meson native file for build-machine tools
-  toolchain.cmake                CMake toolchain file
-  cargo-cross.toml               Cargo config (cross-linker + offline mode)
+  toolchain.cmake.in             CMake toolchain template
+  cargo-cross.toml.in            Cargo config template (cross-linker + offline mode)
   mingw-env.sh                   Environment variables (MINGW_PREFIX, etc.)
 wrappers/
   mingw-cmake                    cmake wrapper (cross-flags, toolchain file)
