@@ -32,7 +32,10 @@ download "${MINGW_W64_URL}"
 echo "==> Downloading Rust source..."
 download "${RUST_SRC_URL}"
 
+echo "==> Downloading LLVM source..."
+download "${LLVM_URL}"
+
 echo ""
 echo "==> All sources cached in ${CACHE_DIR}/"
 echo ""
-echo "Now build with: podman build -t msys2-cross ."
+echo "Now build with: ./msys2-cross setup"

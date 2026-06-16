@@ -6,6 +6,7 @@ GCC_VERSION=16.1.0
 BINUTILS_VERSION=2.46.1
 MINGW_W64_COMMIT=19f5121a2944
 MINGW_W64_VERSION=14.0.0
+LLVM_VERSION=20.1.5
 
 # Build parallelism
 JOBS=$(nproc)
@@ -29,6 +30,7 @@ fi
 GCC_URL="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
 BINUTILS_URL="https://ftp.gnu.org/gnu/binutils/binutils-with-gold-${BINUTILS_VERSION}.tar.bz2"
 MINGW_W64_URL="https://github.com/mingw-w64/mingw-w64/archive/${MINGW_W64_COMMIT}.tar.gz"
+LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/llvm-project-${LLVM_VERSION}.src.tar.xz"
 
 # Rust (std library cross-compiled for mingw target)
 RUST_VERSION=1.96.0
