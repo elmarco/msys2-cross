@@ -11,6 +11,7 @@
 
 MINGW_PACKAGES_DIR="${REPO_DIR}/MINGW-packages"
 DOWNLOAD_CONF="${REPO_DIR}/config/makepkg-download.conf"
+source "${REPO_DIR}/scripts/env-config.sh"
 
 # Colors
 RED='\033[0;31m'
@@ -84,10 +85,7 @@ download_sources() {
     local pkg="$1"
     msg "Downloading sources for ${pkg}..."
     (
-        export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
-        export MINGW_PREFIX=/ucrt64
-        export MINGW_CHOST=x86_64-w64-mingw32
-        export MSYSTEM=UCRT64
+        export MINGW_PACKAGE_PREFIX MINGW_PREFIX MINGW_CHOST MSYSTEM
         cd "${MINGW_PACKAGES_DIR}/${pkg}"
         # Workaround: Fedora's makepkg 7.0.0 has a bug (---mirror instead of
         # --mirror) that breaks git clone for VCS sources. Pre-clone any git
@@ -158,11 +156,8 @@ parse_pkgbuild() {
     local pkgbuild="$1"
     (
         # Provide the variables PKGBUILDs expect
-        export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
-        export MINGW_PREFIX=/ucrt64
-        export MINGW_CHOST=x86_64-w64-mingw32
-        export MSYSTEM=UCRT64
-        export CARCH=x86_64
+        export MINGW_PACKAGE_PREFIX MINGW_PREFIX MINGW_CHOST MSYSTEM
+        export CARCH="${CMAKE_SYSTEM_PROCESSOR}"
 
         # Stub functions PKGBUILDs may call at top level
         mingw_arch() { :; }
@@ -201,9 +196,26 @@ parse_pkgbuild() {
 load_dummy_packages() {
     local -n _map=$1
     local list="${REPO_DIR}/config/dummy-packages.list"
-    while IFS= read -r name; do
-        [[ -z "$name" || "$name" == \#* ]] && continue
-        _map["$name"]=1
+    local _section="host"
+    while IFS= read -r line; do
+        # Detect section markers before stripping comments
+        if [[ "$line" =~ ^#\ *\[([a-z]+)\] ]]; then
+            _section="${BASH_REMATCH[1]}"
+            continue
+        fi
+        # Skip comments and blank lines
+        [[ -z "$line" || "$line" == \#* ]] && continue
+
+        case "$_section" in
+            host)   _map["$line"]=1 ;;
+            shared) _map["${MINGW_PACKAGE_PREFIX}-${line}"]=1 ;;
+            gcc)
+                [[ "$CC_FAMILY" == "gcc" ]] && _map["${MINGW_PACKAGE_PREFIX}-${line}"]=1
+                ;;
+            clang)
+                [[ "$CC_FAMILY" == "clang" ]] && _map["${MINGW_PACKAGE_PREFIX}-${line}"]=1
+                ;;
+        esac
     done < "$list"
 
     # Toolchain packages from packages/ dir are also host-provided
@@ -215,7 +227,7 @@ load_dummy_packages() {
         # Also add the provides
         if [[ -f "${dir}/PKGBUILD" ]]; then
             local provides
-            provides=$(grep -oP "(?<=')[^']+(?=')" "${dir}/PKGBUILD" | grep "^mingw-w64-ucrt-x86_64-" || true)
+            provides=$(grep -oP "(?<=')[^']+(?=')" "${dir}/PKGBUILD" | grep "^${MINGW_PACKAGE_PREFIX}-" || true)
             for p in $provides; do
                 _map["$p"]=1
             done

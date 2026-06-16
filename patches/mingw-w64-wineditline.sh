@@ -6,4 +6,4 @@ sed -i '/cd.*_realname.*_realname/a\  find . -type f \\( -name "*.txt" -o -name 
 sed -i '/cd.*_realname.*_realname/a\  sed -i "s/Strsafe\\.h/strsafe.h/" src/fn_complete.c' PKGBUILD
 
 # Use cross-compilation cmake wrapper and allow old cmake_minimum_required
-sed -i 's|^  cmake \\$|  /ucrt64/bin/cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \\|' PKGBUILD
+sed -i 's|^  cmake \\$|  '"${MINGW_PREFIX}"'/bin/cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \\|' PKGBUILD

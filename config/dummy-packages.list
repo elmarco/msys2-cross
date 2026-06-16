@@ -1,14 +1,14 @@
 # Dummy pacman packages for the mingw DB.
-# Each name becomes an empty pacman package so makepkg's dep checker
-# is satisfied. These are build tools / MSYS2-layer deps provided by
-# Fedora (or not needed for cross-compilation).
+# Package names are base names — the environment-specific prefix
+# (e.g., mingw-w64-ucrt-x86_64-) is prepended by 08-setup-pacman.sh.
 #
-# Non-prefixed names are MSYS2-layer host tools (git, groff, etc.).
-# Prefixed names (mingw-w64-ucrt-x86_64-*) are MINGW deps that are
-# either provided by the host (python, cmake) or not applicable to
-# cross-compilation (clang, emscripten).
+# Sections:
+#   [host]   — unprefixed MSYS2-layer host tools (always included)
+#   [shared] — MINGW deps that apply to all environments
+#   [gcc]    — GCC-specific dummy packages
+#   [clang]  — Clang/LLVM-specific dummy packages
 
-# MSYS2-layer host tools
+# [host]
 autoconf-archive
 docbook-xsl
 git
@@ -16,105 +16,105 @@ groff
 po4a
 xmlto
 
-# Build tools — provided by Fedora
-mingw-w64-ucrt-x86_64-asciidoc
-mingw-w64-ucrt-x86_64-asciidoctor
-mingw-w64-ucrt-x86_64-autotools
-mingw-w64-ucrt-x86_64-cargo-c
-mingw-w64-ucrt-x86_64-cmake-bootstrap
-mingw-w64-ucrt-x86_64-cython
-mingw-w64-ucrt-x86_64-docbook-xml
-mingw-w64-ucrt-x86_64-docbook-xsl
-mingw-w64-ucrt-x86_64-doxygen
-mingw-w64-ucrt-x86_64-gettext-tools
-mingw-w64-ucrt-x86_64-gi-docgen
-mingw-w64-ucrt-x86_64-git
-mingw-w64-ucrt-x86_64-gperf
-mingw-w64-ucrt-x86_64-graphviz
-mingw-w64-ucrt-x86_64-gtk-doc
-mingw-w64-ucrt-x86_64-gtk-update-icon-cache
-mingw-w64-ucrt-x86_64-itstool
-mingw-w64-ucrt-x86_64-libtool
-mingw-w64-ucrt-x86_64-make
-mingw-w64-ucrt-x86_64-meson-python
-mingw-w64-ucrt-x86_64-nasm
-mingw-w64-ucrt-x86_64-ninja
-mingw-w64-ucrt-x86_64-ragel
-mingw-w64-ucrt-x86_64-nodejs
-mingw-w64-ucrt-x86_64-perl
-mingw-w64-ucrt-x86_64-ruby
-mingw-w64-ucrt-x86_64-swig
-mingw-w64-ucrt-x86_64-tools
-mingw-w64-ucrt-x86_64-vala
+# [shared]
+asciidoc
+asciidoctor
+autotools
+cargo-c
+cmake-bootstrap
+cython
+docbook-xml
+docbook-xsl
+doxygen
+gettext-tools
+gi-docgen
+git
+gperf
+graphviz
+gtk-doc
+gtk-update-icon-cache
+itstool
+libtool
+make
+meson-python
+nasm
+ninja
+ragel
+nodejs
+perl
+ruby
+swig
+tools
+vala
+python
+python-babel
+python-build
+python-calver
+python-certifi
+python-charset-normalizer
+python-colorama
+python-docutils
+python-flit-core
+python-fonttools
+python-hatch-vcs
+python-hatchling
+python-idna
+python-imagesize
+python-installer
+python-jinja
+python-lxml
+python-mako
+python-markdown
+python-markupsafe
+python-numpy
+python-packaging
+python-pathspec
+python-pluggy
+python-pygments
+python-pyproject-hooks
+python-pyproject-metadata
+python-requests
+python-roman-numerals
+python-setuptools
+python-setuptools-scm
+python-smartypants
+python-snowballstemmer
+python-sphinx
+python-sphinx-alabaster-theme
+python-sphinx_rtd_theme
+python-sphinxcontrib-applehelp
+python-sphinxcontrib-devhelp
+python-sphinxcontrib-htmlhelp
+python-sphinxcontrib-jquery
+python-sphinxcontrib-jsmath
+python-sphinxcontrib-qthelp
+python-sphinxcontrib-serializinghtml
+python-trove-classifiers
+python-typogrify
+python-urllib3
+crt
+headers
+libmangle
+libwinpthread
+winpthreads
+rust
+wasi-libc
+wasm-component-ld
+wasm-pkg-tools
+wasm-tools
+wit-bindgen
+emscripten
+fc
 
-# Python ecosystem — host python satisfies all of these
-mingw-w64-ucrt-x86_64-python
-mingw-w64-ucrt-x86_64-python-babel
-mingw-w64-ucrt-x86_64-python-build
-mingw-w64-ucrt-x86_64-python-calver
-mingw-w64-ucrt-x86_64-python-certifi
-mingw-w64-ucrt-x86_64-python-charset-normalizer
-mingw-w64-ucrt-x86_64-python-colorama
-mingw-w64-ucrt-x86_64-python-docutils
-mingw-w64-ucrt-x86_64-python-flit-core
-mingw-w64-ucrt-x86_64-python-fonttools
-mingw-w64-ucrt-x86_64-python-hatch-vcs
-mingw-w64-ucrt-x86_64-python-hatchling
-mingw-w64-ucrt-x86_64-python-idna
-mingw-w64-ucrt-x86_64-python-imagesize
-mingw-w64-ucrt-x86_64-python-installer
-mingw-w64-ucrt-x86_64-python-jinja
-mingw-w64-ucrt-x86_64-python-lxml
-mingw-w64-ucrt-x86_64-python-mako
-mingw-w64-ucrt-x86_64-python-markdown
-mingw-w64-ucrt-x86_64-python-markupsafe
-mingw-w64-ucrt-x86_64-python-numpy
-mingw-w64-ucrt-x86_64-python-packaging
-mingw-w64-ucrt-x86_64-python-pathspec
-mingw-w64-ucrt-x86_64-python-pluggy
-mingw-w64-ucrt-x86_64-python-pygments
-mingw-w64-ucrt-x86_64-python-pyproject-hooks
-mingw-w64-ucrt-x86_64-python-pyproject-metadata
-mingw-w64-ucrt-x86_64-python-requests
-mingw-w64-ucrt-x86_64-python-roman-numerals
-mingw-w64-ucrt-x86_64-python-setuptools
-mingw-w64-ucrt-x86_64-python-setuptools-scm
-mingw-w64-ucrt-x86_64-python-smartypants
-mingw-w64-ucrt-x86_64-python-snowballstemmer
-mingw-w64-ucrt-x86_64-python-sphinx
-mingw-w64-ucrt-x86_64-python-sphinx-alabaster-theme
-mingw-w64-ucrt-x86_64-python-sphinx_rtd_theme
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-applehelp
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-devhelp
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-htmlhelp
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-jquery
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-jsmath
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-qthelp
-mingw-w64-ucrt-x86_64-python-sphinxcontrib-serializinghtml
-mingw-w64-ucrt-x86_64-python-trove-classifiers
-mingw-w64-ucrt-x86_64-python-typogrify
-mingw-w64-ucrt-x86_64-python-urllib3
+# [gcc]
+gcc-libgfortran
 
-# Toolchain components — provided by our cross-gcc or not applicable
-mingw-w64-ucrt-x86_64-clang
-mingw-w64-ucrt-x86_64-clang-libs
-mingw-w64-ucrt-x86_64-clang-tools-extra
-mingw-w64-ucrt-x86_64-compiler-rt
-mingw-w64-ucrt-x86_64-crt
-mingw-w64-ucrt-x86_64-emscripten
-mingw-w64-ucrt-x86_64-fc
-mingw-w64-ucrt-x86_64-gcc-libgfortran
-mingw-w64-ucrt-x86_64-headers
-mingw-w64-ucrt-x86_64-libmangle
-mingw-w64-ucrt-x86_64-libwinpthread
-mingw-w64-ucrt-x86_64-lld
-mingw-w64-ucrt-x86_64-llvm
-mingw-w64-ucrt-x86_64-llvm-tools
-mingw-w64-ucrt-x86_64-omp
-mingw-w64-ucrt-x86_64-rust
-mingw-w64-ucrt-x86_64-wasi-libc
-mingw-w64-ucrt-x86_64-wasm-component-ld
-mingw-w64-ucrt-x86_64-wasm-pkg-tools
-mingw-w64-ucrt-x86_64-wasm-tools
-mingw-w64-ucrt-x86_64-winpthreads
-mingw-w64-ucrt-x86_64-wit-bindgen
+# [clang]
+clang
+clang-libs
+clang-tools-extra
+compiler-rt
+lld
+llvm
+llvm-tools
+omp

@@ -88,7 +88,7 @@ RootDir     = ${_ROOT}/
 DBPath      = ${_ROOT}/var/lib/pacman/mingw/
 CacheDir    = ${_ROOT}/var/cache/pacman/mingw/pkg/
 LogFile     = /dev/null
-Architecture = x86_64 auto
+Architecture = ${CMAKE_SYSTEM_PROCESSOR} auto
 SigLevel = Never
 
 [msys2-cross]
@@ -109,9 +109,9 @@ chmod +x "${_ROOT}"/opt/msys2-cross/config/makepkg-mingw
 # The full makepkg_mingw.conf references cross-tools that may not be installed yet.
 _MAKEPKG_CONF=$(mktemp)
 chmod 644 "${_MAKEPKG_CONF}"
-cat > "${_MAKEPKG_CONF}" <<'MKCFG'
-CARCH="x86_64"
-CHOST="x86_64-w64-mingw32"
+cat > "${_MAKEPKG_CONF}" <<MKCFG
+CARCH="${CMAKE_SYSTEM_PROCESSOR}"
+CHOST="${MINGW_CHOST}"
 PKGEXT='.pkg.tar.zst'
 SRCEXT='.src.tar.zst'
 COMPRESSZST=(zstd -c -z -q --threads=0 -)
@@ -139,12 +139,37 @@ _run_makepkg() {
     rm -rf "${dir}/pkg" "${dir}/src"
 }
 
-# Build dummy packages from the list file
+# Build dummy packages from the list file (section-aware)
 DUMMY_LIST=${_ROOT}/opt/msys2-cross/config/dummy-packages.list
 _dummy_dir=$(mktemp -d)
 chmod 755 "${_dummy_dir}"
-while IFS= read -r name; do
-    [[ -z "$name" || "$name" == \#* ]] && continue
+
+_current_section="host"
+while IFS= read -r line; do
+    # Detect section markers before stripping comments
+    if [[ "$line" =~ ^#\ *\[([a-z]+)\] ]]; then
+        _current_section="${BASH_REMATCH[1]}"
+        continue
+    fi
+
+    # Skip comments and blank lines
+    [[ -z "$line" || "$line" == \#* ]] && continue
+
+    # Filter by section
+    case "$_current_section" in
+        host)   name="$line" ;;
+        shared) name="${MINGW_PACKAGE_PREFIX}-${line}" ;;
+        gcc)
+            [[ "$CC_FAMILY" != "gcc" ]] && continue
+            name="${MINGW_PACKAGE_PREFIX}-${line}"
+            ;;
+        clang)
+            [[ "$CC_FAMILY" != "clang" ]] && continue
+            name="${MINGW_PACKAGE_PREFIX}-${line}"
+            ;;
+        *) continue ;;
+    esac
+
     echo "==> Dummy: ${name}"
     mkdir -p "${_dummy_dir}/${name}"
     cat > "${_dummy_dir}/${name}/PKGBUILD" <<EOF

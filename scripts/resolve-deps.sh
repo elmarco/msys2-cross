@@ -58,7 +58,7 @@ get_deps() {
     source PKGBUILD 2>/dev/null
     for dep in "${depends[@]}" "${makedepends[@]}"; do
         dep="${dep%%[><=]*}"
-        if [[ "$dep" == mingw-w64-ucrt-x86_64-* ]]; then
+        if [[ "$dep" == ${MINGW_PACKAGE_PREFIX}-* ]]; then
             echo "$dep"
         fi
     done
@@ -81,7 +81,7 @@ resolve() {
     local deps=$(get_deps "$srcpkg" | sort -u)
     for dep in $deps; do
         pacman --config $PACMAN_CONF -Qq "$dep" &>/dev/null && continue
-        local name="${dep#mingw-w64-ucrt-x86_64-}"
+        local name="${dep#${MINGW_PACKAGE_PREFIX}-}"
         local child="mingw-w64-$name"
         if [[ -n "${in_stack[$child]+x}" ]]; then
             echo "  -> circular dependency: ${srcpkg} <-> ${child} (will rebuild ${child})" >&2
@@ -94,7 +94,7 @@ resolve() {
 
     unset 'in_stack[$srcpkg]'
 
-    local ipkg="mingw-w64-ucrt-x86_64-${srcpkg#mingw-w64-}"
+    local ipkg="${MINGW_PACKAGE_PREFIX}-${srcpkg#mingw-w64-}"
     if ! pacman --config $PACMAN_CONF -Qq "$ipkg" &>/dev/null; then
         result+=("$srcpkg")
     fi

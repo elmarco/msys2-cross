@@ -662,12 +662,12 @@ cmd_describe() {
     for d in "${_depends[@]}"; do
         [[ -z "$d" ]] && continue
         deps+=("${d/#\$\{MINGW_PACKAGE_PREFIX\}-/}")
-        deps[-1]="${deps[-1]/#mingw-w64-ucrt-x86_64-/}"
+        deps[-1]="${deps[-1]/#${MINGW_PACKAGE_PREFIX}-/}"
     done
     for d in "${_makedepends[@]}"; do
         [[ -z "$d" ]] && continue
         makedeps+=("${d/#\$\{MINGW_PACKAGE_PREFIX\}-/}")
-        makedeps[-1]="${makedeps[-1]/#mingw-w64-ucrt-x86_64-/}"
+        makedeps[-1]="${makedeps[-1]/#${MINGW_PACKAGE_PREFIX}-/}"
     done
 
     if [[ ${#deps[@]} -gt 0 ]]; then
@@ -686,7 +686,7 @@ cmd_describe() {
     if ls "${MINGW_PACKAGES_DIR}/${srcdir}"/*.pkg.tar.* &>/dev/null; then
         status+=("built")
     fi
-    if prun pacman --config "${PACMAN_CONF}" -Qq "${_pkgname[0]/#\$\{MINGW_PACKAGE_PREFIX\}/mingw-w64-ucrt-x86_64}" &>/dev/null 2>&1; then
+    if prun pacman --config "${PACMAN_CONF}" -Qq "${_pkgname[0]/#\$\{MINGW_PACKAGE_PREFIX\}/${MINGW_PACKAGE_PREFIX}}" &>/dev/null 2>&1; then
         status+=("installed")
     fi
     if [[ ${#status[@]} -gt 0 ]]; then
