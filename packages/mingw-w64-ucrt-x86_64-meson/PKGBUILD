@@ -9,6 +9,6 @@ license=('Apache-2.0')
 package() {
     install -Dm755 /opt/msys2-cross/wrappers/mingw-meson \
         "${pkgdir}/opt/msys2-cross/wrappers/mingw-meson"
-    install -Dm644 /opt/msys2-cross/config/cross-file.meson \
-        "${pkgdir}/opt/msys2-cross/config/cross-file.meson"
+    install -Dm644 /opt/msys2-cross/generated/cross-file.meson \
+        "${pkgdir}/opt/msys2-cross/generated/cross-file.meson"
 }

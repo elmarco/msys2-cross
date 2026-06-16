@@ -9,6 +9,6 @@ license=('MIT')
 package() {
     install -Dm755 /opt/msys2-cross/wrappers/mingw-cmake \
         "${pkgdir}/opt/msys2-cross/wrappers/mingw-cmake"
-    install -Dm644 /opt/msys2-cross/config/toolchain.cmake \
-        "${pkgdir}/opt/msys2-cross/config/toolchain.cmake"
+    install -Dm644 /opt/msys2-cross/generated/toolchain.cmake \
+        "${pkgdir}/opt/msys2-cross/generated/toolchain.cmake"
 }
