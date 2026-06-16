@@ -7,11 +7,11 @@
 # Output: missing source package names in topological (build) order
 #
 set -o pipefail
+
+source /opt/msys2-cross/config/mingw-env.sh
 # +eu is intentional: sourcing PKGBUILDs references many unset variables,
 # and pacman queries use non-zero exit as control flow.
 set +eu
-
-source /opt/msys2-cross/config/mingw-env.sh
 PACMAN_CONF=/opt/msys2-cross/config/pacman-mingw.conf
 
 # Find the source directory for a package (handles split packages).
@@ -38,6 +38,8 @@ find_srcdir() {
         basename "$(dirname "$match")"
         return
     fi
+    # Signal to the host that this package needs to be checked out
+    echo "NEED_CHECKOUT:${pkg}" >&2
 }
 
 get_deps() {
