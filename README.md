@@ -272,6 +272,35 @@ Run smoke tests inside the container:
 
 Run `./msys2-cross check-update` to see what's drifted.
 
+## FAQ
+
+**How do I query the pacman database inside the container?**
+
+Use `pacman-mingw` instead of plain `pacman`. It points to the MINGW-specific database (`/var/lib/pacman/mingw/`), which is separate from Fedora's system packages:
+
+```sh
+pacman-mingw -Q                # list installed packages
+pacman-mingw -Qs glib          # search installed packages
+pacman-mingw -Qi mingw-w64-ucrt-x86_64-glib2   # package info
+pacman-mingw -Qo /ucrt64/lib/libglib-2.0.dll.a  # find owning package
+```
+
+**Why are some wrappers prefixed (`mingw-meson`) and others suffixed (`pacman-mingw`)?**
+
+The `mingw-` prefixed wrappers (`mingw-meson`, `mingw-cmake`, `mingw-pkg-config`) follow MSYS2's own naming convention — they wrap a build tool with cross-compilation flags. `pacman-mingw` is unique to this project (MSYS2 doesn't need a pacman wrapper) and reads as "pacman, configured for the mingw database." Different intent, inconsistent naming.
+
+**Do I need to source anything after `./msys2-cross shell`?**
+
+No. The container's environment already has `/opt/msys2-cross/wrappers` and `/opt/msys2-cross/config` in PATH, so all wrappers are available immediately. If you're debugging outside the normal shell entry point, you can `source /opt/msys2-cross/config/mingw-env.sh`.
+
+**A package fails with `cannot execute binary file` — what do I do?**
+
+The package is trying to run a compiled `.exe` during the build (code generator, test suite, etc.). Write a patch in `patches/<pkgbase>.sh` to disable that feature, or install Wine and register `binfmt_misc` to run PE binaries transparently.
+
+**How do I add a new host tool as a dummy package?**
+
+If a MINGW dependency is actually a build tool provided by Fedora (e.g., `gperf`, `nasm`), add it to `config/dummy-packages.list` instead of cross-compiling it. The dependency resolver will then skip it.
+
 ## Project structure
 
 ```
