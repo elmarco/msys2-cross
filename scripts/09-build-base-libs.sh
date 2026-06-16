@@ -15,10 +15,8 @@ BOOTSTRAP_DIR=/opt/msys2-cross
 PACMAN_CONF="${BOOTSTRAP_DIR}/config/pacman-mingw.conf"
 REPO_DIR="${BOOTSTRAP_DIR}/repo"
 
-export MSYSTEM=UCRT64
-export MINGW_PREFIX=/ucrt64
-export MINGW_CHOST=x86_64-w64-mingw32
-export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
+source "${BOOTSTRAP_DIR}/scripts/env-config.sh"
+export MSYSTEM MINGW_PREFIX MINGW_CHOST MINGW_PACKAGE_PREFIX
 export PATH="${BOOTSTRAP_DIR}/wrappers:${BOOTSTRAP_DIR}/config:${PATH}"
 
 # Sparse-clone MINGW-packages once, then add directories as needed

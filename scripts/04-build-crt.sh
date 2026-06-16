@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/env-config.sh"
 
 echo "========================================="
 echo "Stage 4: MinGW-w64 CRT ${MINGW_W64_VERSION}"

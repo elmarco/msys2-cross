@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/env-config.sh"
 
 echo "========================================="
 echo "Stage 7: Build Rust std for mingw target"
@@ -8,7 +8,6 @@ echo "========================================="
 
 RUST_SRC_DIR="${SRC_DIR}/rustc-${RUST_VERSION}-src"
 RUST_SYSROOT=$(rustc --print sysroot)
-RUST_TARGET=x86_64-pc-windows-gnu
 
 echo "==> Bootstrap rustc: $(rustc --version)"
 echo "==> Target: ${TARGET} (${RUST_TARGET})"
@@ -41,11 +40,11 @@ download-ci-llvm = false
 channel = "stable"
 
 [target.${RUST_TARGET}]
-cc = "${TARGET}-gcc"
-cxx = "${TARGET}-g++"
-ar = "${TARGET}-ar"
-ranlib = "${TARGET}-ranlib"
-linker = "${TARGET}-gcc"
+cc = "${CROSS_CC}"
+cxx = "${CROSS_CXX}"
+ar = "${CROSS_AR}"
+ranlib = "${CROSS_RANLIB}"
+linker = "${CROSS_CC}"
 EOF
 
 # x.py queries git log for version info — create a stub repo

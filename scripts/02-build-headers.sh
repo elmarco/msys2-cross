@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/env-config.sh"
 
 echo "========================================="
 echo "Stage 2: MinGW-w64 Headers ${MINGW_W64_VERSION}"

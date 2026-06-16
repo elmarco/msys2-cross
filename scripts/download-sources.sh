@@ -7,7 +7,7 @@ set -euo pipefail
 # Usage: ./scripts/download-sources.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/env-config.sh"
 
 CACHE_DIR="${SCRIPT_DIR}/../sources"
 mkdir -p "${CACHE_DIR}"
