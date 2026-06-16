@@ -7,11 +7,6 @@ BINUTILS_VERSION=2.46.1
 MINGW_W64_COMMIT=19f5121a2944
 MINGW_W64_VERSION=14.0.0
 
-# Target triple
-TARGET=x86_64-w64-mingw32
-MINGW_PREFIX=/ucrt64
-SYSROOT=/ucrt64
-
 # Build parallelism
 JOBS=$(nproc)
 
