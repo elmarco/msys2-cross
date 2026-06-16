@@ -76,6 +76,8 @@ Commands:
   destroy               Remove working image, bootstrap image, and built packages
   rebuild               Rebuild the bootstrap image
   check-update          Check for version drift against upstream MSYS2
+  complete zsh          Output shell code to load Zsh completions
+                        Usage: eval "$(msys2-cross complete zsh)"
 
 Package names can omit the "mingw-w64-" prefix:
   msys2-cross build libpng    →  builds mingw-w64-libpng
@@ -833,6 +835,24 @@ case "$1" in
     check-update) shift; cmd_check_update "$@" ;;
     srpm)       shift; bash "${SCRIPT_DIR}/scripts/make-mingw-srpm.sh" "$@" ;;
     mock-build) shift; cmd_mock_build "$@" ;;
+    complete)
+        shift
+        case "${1:-}" in
+            zsh)
+                cat <<EVAL
+fpath=(${SCRIPT_DIR}/completions/zsh \$fpath)
+unfunction _msys2-cross 2>/dev/null
+autoload -Uz _msys2-cross
+compinit
+compdef _msys2-cross './msys2-cross'
+EVAL
+                ;;
+            *)
+                err "Usage: eval \"\$(msys2-cross complete zsh)\""
+                exit 1
+                ;;
+        esac
+        ;;
     help|-h|--help) usage 0 ;;
     *)        err "Unknown command: $1"; usage 1 ;;
 esac

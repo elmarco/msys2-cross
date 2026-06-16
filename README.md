@@ -42,6 +42,13 @@ survive across builds.
 
 Each environment uses a separate container image (`msys2-cross-ucrt64`, `msys2-cross-clang64`, etc.) and can coexist.
 
+### Shell completion
+
+```sh
+# Load Zsh completions (add to .zshrc for persistence)
+eval "$(./msys2-cross complete zsh)"
+```
+
 ## Commands
 
 | Command | Description |
@@ -64,6 +71,7 @@ Each environment uses a separate container image (`msys2-cross-ucrt64`, `msys2-c
 | `srpm <pkg> [outdir]` | Generate an SRPM for a MINGW package |
 | `mock-build [mock flags]` | Build the msys2-cross RPM via mock |
 | `check-update` | Check for version drift against upstream MSYS2 |
+| `complete zsh` | Output shell code to load Zsh completions |
 
 Package names can omit the `mingw-w64-` prefix: `build libpng` works like `build mingw-w64-libpng`.
 
@@ -365,6 +373,8 @@ wrappers/
   native-pkg-config              pkg-config for host/native build-time deps
   cygpath                        No-op shim (MSYS2 path conversion)
   pacman-mingw                   pacman wrapper for the mingw DB
+completions/
+  zsh/_msys2-cross               Zsh completion function
 packages/                        Pacman PKGBUILDs for toolchain components
 patches/                         Per-package cross-compilation fixes (~41 packages)
 sources/                         Pre-downloaded tarballs (gitignored)

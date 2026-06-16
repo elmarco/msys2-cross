@@ -1,0 +1,103 @@
+#compdef msys2-cross
+
+_msys2_cross_packages() {
+    local script_dir
+    script_dir="${${(%):-%x}:A:h:h:h}"
+    local mingw_packages_dir="${MINGW_PACKAGES_DIR:-${script_dir}/MINGW-packages}"
+
+    if [[ -d "$mingw_packages_dir" ]]; then
+        local -a pkgs
+        pkgs=( ${mingw_packages_dir}/mingw-w64-*(/:t:s/mingw-w64-//) )
+        _describe -t packages 'package' pkgs
+    fi
+}
+
+_msys2-cross() {
+    local -a commands=(
+        'setup:First-time setup (download sources, build bootstrap, clone MINGW-packages)'
+        'download:Download sources for packages'
+        'build:Build one or more MINGW packages (builds missing deps)'
+        'install:Install built packages into the working image'
+        'deps:Show missing dependencies for a package'
+        'describe:Show package info (version, deps, status)'
+        'shell:Open an interactive shell in the build environment'
+        'run:Run a command in the build environment'
+        'list:List packages in the sysroot'
+        'diff:Show files changed in the working image vs bootstrap'
+        'reset:Remove working image (reset to bootstrap baseline)'
+        'destroy:Remove working image, bootstrap image, and built packages'
+        'rebuild:Rebuild the bootstrap image'
+        'check-update:Check for version drift against upstream MSYS2'
+        'srpm:Generate an SRPM for a MINGW package'
+        'mock-build:Build the msys2-cross RPM via mock'
+        'complete:Output shell code to load completions'
+        'help:Display usage information'
+    )
+
+    local context state state_descr line
+    typeset -A opt_args
+
+    _arguments -C \
+        '--msystem=[Target environment]:environment:(UCRT64 CLANG64 CLANGARM64)' \
+        '1:command:->command' \
+        '*::arg:->args' && return
+
+    case $state in
+        command)
+            _describe -t commands 'msys2-cross command' commands
+            ;;
+        args)
+            case ${line[1]} in
+                setup)
+                    _arguments \
+                        '(-f --force)'{-f,--force}'[Rebuild bootstrap image]'
+                    ;;
+                download)
+                    _msys2_cross_packages
+                    ;;
+                build)
+                    _arguments \
+                        '(-k --keep-going)'{-k,--keep-going}'[Keep going after failures]' \
+                        '--nocheck[Skip test suites]' \
+                        '--noextract[Reuse previously extracted sources]' \
+                        '*:package:_msys2_cross_packages'
+                    ;;
+                install)
+                    _msys2_cross_packages
+                    ;;
+                deps)
+                    _arguments '1:package:_msys2_cross_packages'
+                    ;;
+                describe)
+                    _arguments '1:package:_msys2_cross_packages'
+                    ;;
+                shell)
+                    _arguments '--network[Enable network access]'
+                    ;;
+                run)
+                    _arguments \
+                        '--network[Enable network access]' \
+                        '*:command:_command_names -e'
+                    ;;
+                list)
+                    _arguments \
+                        '(-u -a)-u[List built but not installed packages]' \
+                        '(-u -a)-a[List all packages known to cross-compile]'
+                    ;;
+                srpm)
+                    _arguments \
+                        '1:package:_msys2_cross_packages' \
+                        '2:output directory:_directories'
+                    ;;
+                complete)
+                    _arguments '1:shell:(zsh)'
+                    ;;
+                mock-build)
+                    _message 'mock flags'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_msys2-cross "$@"
