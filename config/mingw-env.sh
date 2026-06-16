@@ -1,5 +1,5 @@
 #!/bin/bash
-# Environment variables for the UCRT64 cross-compilation environment.
+# Environment variables for the cross-compilation environment.
 # Sourced by makepkg-mingw and available to users interactively.
 #
 # CC/CXX are NOT exported here. Autotools finds the cross-compiler via
@@ -7,18 +7,19 @@
 # Setting CC globally breaks config.guess — it uses $CC -dumpmachine and
 # misidentifies the build machine as mingw32.
 
-export MSYSTEM=UCRT64
-export MINGW_PREFIX=/ucrt64
-export MINGW_CHOST=x86_64-w64-mingw32
-export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
+source /opt/msys2-cross/scripts/env-config.sh
+
+export MSYSTEM MINGW_PREFIX MINGW_CHOST MINGW_PACKAGE_PREFIX
+export CC_FAMILY CROSS_CC CROSS_CXX CROSS_AR CROSS_STRIP CROSS_OBJCOPY
+export CROSS_RANLIB CROSS_WINDRES CROSS_DLLTOOL
+export CROSS_CFLAGS CROSS_CXXFLAGS
+export CMAKE_SYSTEM_PROCESSOR MESON_CPU_FAMILY
+export RUST_TARGET TARGET MSYSTEM_LOWER
 
 export PKG_CONFIG_PATH="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgconfig"
 export PKG_CONFIG_SYSROOT_DIR="${MINGW_PREFIX}"
 export PKG_CONFIG_LIBDIR="${MINGW_PREFIX}/lib/pkgconfig:${MINGW_PREFIX}/share/pkgconfig"
 
-# Tell autotools sub-configures the target triple (they don't inherit --host).
-# build_alias must also be set, otherwise autoconf defaults build=host
-# and thinks it's a native build (→ "cannot run C compiled programs").
 export host_alias="${MINGW_CHOST}"
 export build_alias="$(gcc -dumpmachine)"
 

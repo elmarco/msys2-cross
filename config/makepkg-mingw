@@ -19,7 +19,7 @@ error() { echo -e "\033[1;31m==> ERROR:\033[0m \033[1m$1\033[0m" >&2; }
 # Source the cross-compilation environment
 source "${BOOTSTRAP_DIR}/config/mingw-env.sh"
 
-msg "Building for UCRT64 (${MINGW_CHOST})"
+msg "Building for ${MSYSTEM} (${MINGW_CHOST})"
 
 # Determine makepkg config
 MAKEPKG_CONF="${BOOTSTRAP_DIR}/config/makepkg_mingw.conf"
@@ -99,10 +99,10 @@ sed -i \
 
 # Replace cmake.exe with our wrapper (handles both quoting styles)
 sed -i \
-    -e 's|${MINGW_PREFIX}/bin/cmake\.exe|/ucrt64/bin/cmake|g' \
-    -e 's|"${MINGW_PREFIX}"/bin/cmake\.exe|/ucrt64/bin/cmake|g' \
-    -e 's|${MINGW_PREFIX}/bin/cmake\b|/ucrt64/bin/cmake|g' \
-    -e 's|"${MINGW_PREFIX}"/bin/cmake\b|/ucrt64/bin/cmake|g' \
+    -e 's|${MINGW_PREFIX}/bin/cmake\.exe|'"${MINGW_PREFIX}"'/bin/cmake|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/cmake\.exe|'"${MINGW_PREFIX}"'/bin/cmake|g' \
+    -e 's|${MINGW_PREFIX}/bin/cmake\b|'"${MINGW_PREFIX}"'/bin/cmake|g' \
+    -e 's|"${MINGW_PREFIX}"/bin/cmake\b|'"${MINGW_PREFIX}"'/bin/cmake|g' \
     PKGBUILD
 
 # Remove MSYS2_ARG_CONV_EXCL (MSYS2-only path conversion suppression).
