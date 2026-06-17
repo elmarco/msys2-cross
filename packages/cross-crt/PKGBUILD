@@ -1,0 +1,24 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-cross-crt
+pkgver=14.0.0
+pkgrel=1
+pkgdesc="MinGW-w64 CRT (bootstrap)"
+arch=('any')
+url="https://www.mingw-w64.org/"
+license=('custom')
+depends=("${MINGW_PACKAGE_PREFIX}-cross-headers")
+provides=(
+    "${MINGW_PACKAGE_PREFIX}-crt-git"
+)
+conflicts=("${MINGW_PACKAGE_PREFIX}-crt-git")
+
+package() {
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/lib"
+    cp -a ${MINGW_PREFIX}/lib/*.o "${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/lib/*.a "${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
+
+    # Exclude GCC and winpthreads libraries (packaged separately)
+    rm -f "${pkgdir}"${MINGW_PREFIX}/lib/libgcc* 2>/dev/null || true
+    rm -f "${pkgdir}"${MINGW_PREFIX}/lib/libstdc++* 2>/dev/null || true
+    rm -f "${pkgdir}"${MINGW_PREFIX}/lib/libpthread* 2>/dev/null || true
+    rm -f "${pkgdir}"${MINGW_PREFIX}/lib/libwinpthread* 2>/dev/null || true
+}

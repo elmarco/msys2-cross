@@ -1,0 +1,31 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-cross-binutils
+pkgver=2.46
+pkgrel=1
+pkgdesc="GNU Binutils for ${TARGET} cross-compilation (bootstrap)"
+arch=('x86_64')
+url="https://www.gnu.org/software/binutils/"
+license=('GPL')
+provides=(
+    "${MINGW_PACKAGE_PREFIX}-binutils"
+)
+conflicts=("${MINGW_PACKAGE_PREFIX}-binutils")
+
+package() {
+    mkdir -p "${pkgdir}/usr/bin"
+    for tool in addr2line ar as c++filt dlltool dllwrap elfedit gprof ld ld.bfd \
+                nm objcopy objdump ranlib readelf size strings strip windmc windres; do
+        if [[ -f "/usr/bin/${TARGET}-${tool}" ]]; then
+            install -Dm755 "/usr/bin/${TARGET}-${tool}" "${pkgdir}/usr/bin/${TARGET}-${tool}"
+        fi
+    done
+
+    if [[ -d "/usr/${TARGET}" ]]; then
+        mkdir -p "${pkgdir}/usr/${TARGET}"
+        cp -a "/usr/${TARGET}/lib" "${pkgdir}/usr/${TARGET}/" 2>/dev/null || true
+    fi
+
+    if [[ -d "/usr/lib/bfd-plugins" ]]; then
+        mkdir -p "${pkgdir}/usr/lib"
+        cp -a "/usr/lib/bfd-plugins" "${pkgdir}/usr/lib/"
+    fi
+}

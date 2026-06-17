@@ -1,0 +1,16 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-cross-headers
+pkgver=14.0.0
+pkgrel=1
+pkgdesc="MinGW-w64 Windows API headers (bootstrap)"
+arch=('any')
+url="https://www.mingw-w64.org/"
+license=('custom')
+provides=(
+    "${MINGW_PACKAGE_PREFIX}-headers-git"
+)
+conflicts=("${MINGW_PACKAGE_PREFIX}-headers-git")
+
+package() {
+    mkdir -p "${pkgdir}${MINGW_PREFIX}"
+    cp -a ${MINGW_PREFIX}/include "${pkgdir}${MINGW_PREFIX}/"
+}

@@ -785,24 +785,22 @@ cmd_check_update() {
 
     msg "Checking upstream MSYS2 package versions..."
 
-    echo ""
-    echo "Toolchain (pinned in scripts/common.sh):"
-
-    local local_gcc local_binutils local_mingw_commit local_rust
+    local local_gcc local_binutils local_llvm local_mingw_commit local_rust
     local_gcc=$(grep '^GCC_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
     local_binutils=$(grep '^BINUTILS_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
+    local_llvm=$(grep '^LLVM_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
     local_mingw_commit=$(grep '^MINGW_W64_COMMIT=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
     local_rust=$(grep '^RUST_VERSION=' "${SCRIPT_DIR}/scripts/common.sh" | cut -d= -f2)
 
     local upstream_pkgbuild
-    for pair in "gcc:mingw-w64-gcc" "binutils:mingw-w64-binutils" "rust:mingw-w64-rust"; do
-        local name="${pair%%:*}" pkg="${pair#*:}"
-        local local_ver
-        case "$name" in
-            gcc)      local_ver="$local_gcc" ;;
-            binutils) local_ver="$local_binutils" ;;
-            rust)     local_ver="$local_rust" ;;
-        esac
+
+    echo ""
+    echo "Toolchain (pinned in scripts/common.sh):"
+
+    for pair in "gcc:mingw-w64-gcc:$local_gcc" "binutils:mingw-w64-binutils:$local_binutils" \
+                "llvm:mingw-w64-llvm:$local_llvm" "rust:mingw-w64-rust:$local_rust"; do
+        local name="${pair%%:*}" rest="${pair#*:}"
+        local pkg="${rest%%:*}" local_ver="${rest#*:}"
         upstream_pkgbuild=$(curl -fsSL "${github_raw}/${pkg}/PKGBUILD" 2>/dev/null) || true
         _compare "$name" "$local_ver" "$(_extract_pkgver "$upstream_pkgbuild")"
     done

@@ -1,0 +1,61 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-cross-gcc
+pkgver=16.1.0
+pkgrel=1
+pkgdesc="GCC cross-compiler for ${TARGET} (bootstrap)"
+arch=('x86_64')
+url="https://gcc.gnu.org/"
+license=('GPL')
+depends=(
+    "${MINGW_PACKAGE_PREFIX}-cross-binutils"
+    "${MINGW_PACKAGE_PREFIX}-cross-crt"
+    "${MINGW_PACKAGE_PREFIX}-cross-winpthreads"
+)
+provides=(
+    "${MINGW_PACKAGE_PREFIX}-gcc"
+    "${MINGW_PACKAGE_PREFIX}-gcc-libs"
+    "${MINGW_PACKAGE_PREFIX}-cc"
+    "${MINGW_PACKAGE_PREFIX}-cc-libs"
+)
+conflicts=(
+    "${MINGW_PACKAGE_PREFIX}-gcc"
+    "${MINGW_PACKAGE_PREFIX}-gcc-libs"
+)
+
+package() {
+    mkdir -p "${pkgdir}/usr/bin"
+    for tool in gcc g++ cpp gcov gcov-dump gcov-tool \
+                gcc-ar gcc-nm gcc-ranlib lto-dump; do
+        if [[ -f "/usr/bin/${TARGET}-${tool}" ]]; then
+            install -Dm755 "/usr/bin/${TARGET}-${tool}" "${pkgdir}/usr/bin/${TARGET}-${tool}"
+        fi
+    done
+
+    ln -sf "${TARGET}-gcc" "${pkgdir}/usr/bin/${TARGET}-cc"
+
+    if [[ -d "/usr/lib/gcc/${TARGET}" ]]; then
+        mkdir -p "${pkgdir}/usr/lib/gcc"
+        cp -a "/usr/lib/gcc/${TARGET}" "${pkgdir}/usr/lib/gcc/"
+    fi
+
+    if [[ -d "/usr/libexec/gcc/${TARGET}" ]]; then
+        mkdir -p "${pkgdir}/usr/libexec/gcc"
+        cp -a "/usr/libexec/gcc/${TARGET}" "${pkgdir}/usr/libexec/gcc/"
+    fi
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/bin" "${pkgdir}${MINGW_PREFIX}/lib"
+
+    for dll in libgcc_s_seh-1.dll libstdc++-6.dll libatomic-1.dll \
+               libgomp-1.dll libquadmath-0.dll libgfortran-5.dll \
+               libssp-0.dll; do
+        if [[ -f "${MINGW_PREFIX}/bin/${dll}" ]]; then
+            install -Dm755 "${MINGW_PREFIX}/bin/${dll}" "${pkgdir}${MINGW_PREFIX}/bin/${dll}"
+        fi
+    done
+
+    for lib in libgcc.a libgcc_s.a libstdc++.a libstdc++fs.a libsupc++.a \
+               libatomic.a libgomp.a libquadmath.a; do
+        if [[ -f "${MINGW_PREFIX}/lib/${lib}" ]]; then
+            install -Dm644 "${MINGW_PREFIX}/lib/${lib}" "${pkgdir}${MINGW_PREFIX}/lib/${lib}"
+        fi
+    done
+}

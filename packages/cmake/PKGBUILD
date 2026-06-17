@@ -1,7 +1,7 @@
-pkgname=mingw-w64-ucrt-x86_64-cmake
+pkgname=${MINGW_PACKAGE_PREFIX}-cmake
 pkgver=1.0
 pkgrel=1
-pkgdesc="CMake wrapper for UCRT64 cross-compilation on Linux"
+pkgdesc="CMake wrapper for cross-compilation on Linux"
 arch=('any')
 url="https://cmake.org/"
 license=('MIT')

@@ -218,18 +218,36 @@ load_dummy_packages() {
         esac
     done < "$list"
 
-    # Toolchain packages from packages/ dir are also host-provided
+    # Toolchain packages from packages/ dir are also host-provided.
+    # Dir names are generic (e.g. "cross-gcc"); prepend MINGW_PACKAGE_PREFIX.
+    # PKGBUILDs use env vars, so we evaluate them in a subshell to extract provides.
     for dir in "${REPO_DIR}"/packages/*/; do
         [[ -d "$dir" ]] || continue
-        local pname
-        pname=$(basename "$dir")
-        _map["$pname"]=1
-        # Also add the provides
+        local _base _tc
+        _base=$(basename "$dir")
+
+        # Respect pkg.conf toolchain filter
+        _tc=all
+        if [[ -f "${dir}/pkg.conf" ]]; then
+            _tc=$(grep -m1 '^toolchain=' "${dir}/pkg.conf" | cut -d= -f2)
+        fi
+        if [[ "$_tc" != "all" && "$_tc" != "$CC_FAMILY" ]]; then
+            continue
+        fi
+
+        _map["${MINGW_PACKAGE_PREFIX}-${_base}"]=1
+
         if [[ -f "${dir}/PKGBUILD" ]]; then
-            local provides
-            provides=$(grep -oP "(?<=')[^']+(?=')" "${dir}/PKGBUILD" | grep "^${MINGW_PACKAGE_PREFIX}-" || true)
-            for p in $provides; do
-                _map["$p"]=1
+            local _provides
+            _provides=$(
+                export MINGW_PACKAGE_PREFIX MINGW_PREFIX TARGET LLVM_VERSION
+                set +eu
+                source "${dir}/PKGBUILD" 2>/dev/null
+                printf '%s\n' "${provides[@]}"
+            )
+            local p
+            for p in $_provides; do
+                [[ -n "$p" ]] && _map["$p"]=1
             done
         fi
     done

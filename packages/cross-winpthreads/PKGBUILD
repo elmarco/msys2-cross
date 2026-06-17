@@ -1,0 +1,29 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-cross-winpthreads
+pkgver=14.0.0
+pkgrel=1
+pkgdesc="MinGW-w64 winpthreads (bootstrap)"
+arch=('any')
+url="https://www.mingw-w64.org/"
+license=('MIT' 'custom')
+depends=("${MINGW_PACKAGE_PREFIX}-cross-crt")
+provides=(
+    "${MINGW_PACKAGE_PREFIX}-winpthreads-git"
+    "${MINGW_PACKAGE_PREFIX}-libwinpthread-git"
+)
+conflicts=(
+    "${MINGW_PACKAGE_PREFIX}-winpthreads-git"
+    "${MINGW_PACKAGE_PREFIX}-libwinpthread-git"
+)
+
+package() {
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/"{bin,lib,include}
+
+    cp -a ${MINGW_PREFIX}/include/pthread*.h "${pkgdir}${MINGW_PREFIX}/include/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/include/sched.h "${pkgdir}${MINGW_PREFIX}/include/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/include/semaphore.h "${pkgdir}${MINGW_PREFIX}/include/" 2>/dev/null || true
+
+    cp -a ${MINGW_PREFIX}/lib/libpthread*.a "${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/lib/libwinpthread*.a "${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
+
+    cp -a ${MINGW_PREFIX}/bin/libwinpthread*.dll "${pkgdir}${MINGW_PREFIX}/bin/" 2>/dev/null || true
+}

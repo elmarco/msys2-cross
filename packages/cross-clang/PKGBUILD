@@ -1,0 +1,52 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-cross-clang
+pkgver=${LLVM_VERSION}
+pkgrel=1
+pkgdesc="LLVM/Clang cross-compiler for ${TARGET} (bootstrap)"
+arch=('x86_64')
+url="https://llvm.org/"
+license=('Apache-2.0')
+depends=(
+    "${MINGW_PACKAGE_PREFIX}-cross-crt"
+    "${MINGW_PACKAGE_PREFIX}-cross-winpthreads"
+)
+provides=(
+    "${MINGW_PACKAGE_PREFIX}-clang"
+    "${MINGW_PACKAGE_PREFIX}-lld"
+    "${MINGW_PACKAGE_PREFIX}-llvm"
+    "${MINGW_PACKAGE_PREFIX}-compiler-rt"
+    "${MINGW_PACKAGE_PREFIX}-libc++"
+    "${MINGW_PACKAGE_PREFIX}-libunwind"
+    "${MINGW_PACKAGE_PREFIX}-gcc"
+    "${MINGW_PACKAGE_PREFIX}-gcc-libs"
+    "${MINGW_PACKAGE_PREFIX}-cc"
+    "${MINGW_PACKAGE_PREFIX}-cc-libs"
+    "${MINGW_PACKAGE_PREFIX}-binutils"
+)
+conflicts=(
+    "${MINGW_PACKAGE_PREFIX}-clang"
+    "${MINGW_PACKAGE_PREFIX}-gcc"
+    "${MINGW_PACKAGE_PREFIX}-gcc-libs"
+)
+
+package() {
+    mkdir -p "${pkgdir}/usr/bin"
+    for f in /usr/bin/${TARGET}-*; do
+        [[ -f "$f" ]] && install -Dm755 "$f" "${pkgdir}$f"
+    done
+    for f in /usr/bin/llvm-* /usr/bin/clang* /usr/bin/lld* /usr/bin/ld.lld*; do
+        [[ -f "$f" ]] && install -Dm755 "$f" "${pkgdir}$f"
+    done
+
+    # Clang resource dir (compiler-rt builtins)
+    if [[ -d "/usr/lib/clang" ]]; then
+        mkdir -p "${pkgdir}/usr/lib"
+        cp -a /usr/lib/clang "${pkgdir}/usr/lib/"
+    fi
+
+    # LLVM runtime libs in sysroot
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/"{bin,lib}
+    cp -a ${MINGW_PREFIX}/lib/libc++* "${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/lib/libunwind* "${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/bin/libc++*.dll "${pkgdir}${MINGW_PREFIX}/bin/" 2>/dev/null || true
+    cp -a ${MINGW_PREFIX}/bin/libunwind*.dll "${pkgdir}${MINGW_PREFIX}/bin/" 2>/dev/null || true
+}

@@ -128,14 +128,15 @@ _run_makepkg() {
     if [[ -n "${_ROOT}" ]]; then
         sed -i '/^package()/,/^}/c\package() { mkdir -p "${pkgdir}/opt/msys2-cross"; }' "${dir}/PKGBUILD"
     fi
+    # PKGBUILDs use env vars for portability across environments
+    local _env="export MINGW_PACKAGE_PREFIX='${MINGW_PACKAGE_PREFIX}' MINGW_PREFIX='${MINGW_PREFIX}' TARGET='${TARGET}' LLVM_VERSION='${LLVM_VERSION}'"
     if [[ "$(id -u)" == "0" ]]; then
         chown -R builduser: "${dir}"
-        su builduser -s /bin/bash -c "cd '${dir}' && makepkg --config '${_MAKEPKG_CONF}' --nodeps --skipinteg --nocheck --force"
+        su builduser -s /bin/bash -c "${_env} && cd '${dir}' && makepkg --config '${_MAKEPKG_CONF}' --nodeps --skipinteg --nocheck --force"
     else
-        (cd "${dir}" && makepkg --config "${_MAKEPKG_CONF}" --nodeps --skipinteg --nocheck --force)
+        (${_env} && cd "${dir}" && makepkg --config "${_MAKEPKG_CONF}" --nodeps --skipinteg --nocheck --force)
     fi
     mv "${dir}"/*.pkg.tar.* "${REPO_DIR}/"
-    # Clean makepkg build artifacts (pkg/, src/) to avoid check-buildroot failures
     rm -rf "${dir}/pkg" "${dir}/src"
 }
 
@@ -186,106 +187,36 @@ done < "${DUMMY_LIST}"
 rm -rf "${_dummy_dir}"
 
 # Build real packages (toolchain repackaging, wrappers with provides=, etc.)
-# The source PKGBUILDs use UCRT64 prefixes; transform them to match the current
-# environment by substituting package prefixes and sysroot paths.
-_UCRT_PKG_PREFIX="mingw-w64-ucrt-x86_64"
+# Each package dir has a PKGBUILD using env vars and an optional pkg.conf
+# with toolchain= to filter by CC_FAMILY.
 _pkg_tmpdir=$(mktemp -d)
 chmod 755 "${_pkg_tmpdir}"
 
 for pkgdir in "${PKG_DIR}"/*/; do
     _base=$(basename "${pkgdir%/}")
 
-    # Skip GCC-only packages for clang builds
-    if [[ "${CC_FAMILY}" = "clang" ]]; then
-        case "${_base}" in
-            *-cross-gcc|*-cross-binutils) echo "==> Skipping ${_base} (gcc-only)"; continue ;;
-        esac
+    # Read toolchain filter from pkg.conf (default: all)
+    _toolchain=all
+    if [[ -f "${pkgdir}pkg.conf" ]]; then
+        _toolchain=$(grep -m1 '^toolchain=' "${pkgdir}pkg.conf" | cut -d= -f2)
+    fi
+    if [[ "$_toolchain" != "all" && "$_toolchain" != "$CC_FAMILY" ]]; then
+        echo "==> Skipping ${_base} (${_toolchain}-only)"
+        continue
     fi
 
-    echo "==> Packaging ${_base} (as ${MINGW_PACKAGE_PREFIX})..."
+    echo "==> Packaging ${MINGW_PACKAGE_PREFIX}-${_base}..."
     _transformed="${_pkg_tmpdir}/${_base}"
     mkdir -p "${_transformed}"
     cp "${pkgdir}PKGBUILD" "${_transformed}/PKGBUILD"
 
-    # Substitute UCRT64 → current environment
-    sed -i \
-        -e "s|${_UCRT_PKG_PREFIX}|${MINGW_PACKAGE_PREFIX}|g" \
-        -e "s|/ucrt64|${MINGW_PREFIX}|g" \
-        "${_transformed}/PKGBUILD"
-
-    # For clang CRT: also exclude LLVM runtime libs (packaged separately)
-    if [[ "${CC_FAMILY}" = "clang" && "${_base}" = *-cross-crt ]]; then
-        sed -i '/rm -f.*libgcc/a\
-    rm -f "${pkgdir}"'"${MINGW_PREFIX}"'/lib/libc++* 2>/dev/null || true\
-    rm -f "${pkgdir}"'"${MINGW_PREFIX}"'/lib/libunwind* 2>/dev/null || true' \
-            "${_transformed}/PKGBUILD"
+    # Apply per-toolchain hooks if present
+    if [[ -f "${pkgdir}hooks/${CC_FAMILY}.sh" ]]; then
+        (cd "${_transformed}" && source "${pkgdir}hooks/${CC_FAMILY}.sh")
     fi
 
     _run_makepkg "${_transformed}"
 done
-
-# For clang builds: generate cross-clang package (replaces cross-gcc + cross-binutils)
-if [[ "${CC_FAMILY}" = "clang" ]]; then
-    echo "==> Packaging ${MINGW_PACKAGE_PREFIX}-cross-clang..."
-    _clang_dir="${_pkg_tmpdir}/${MINGW_PACKAGE_PREFIX}-cross-clang"
-    mkdir -p "${_clang_dir}"
-    cat > "${_clang_dir}/PKGBUILD" <<CLANGPKG
-pkgname=${MINGW_PACKAGE_PREFIX}-cross-clang
-pkgver=${LLVM_VERSION}
-pkgrel=1
-pkgdesc="LLVM/Clang cross-compiler for ${TARGET} (bootstrap)"
-arch=('x86_64')
-url="https://llvm.org/"
-license=('Apache-2.0')
-depends=(
-    '${MINGW_PACKAGE_PREFIX}-cross-crt'
-    '${MINGW_PACKAGE_PREFIX}-cross-winpthreads'
-)
-provides=(
-    '${MINGW_PACKAGE_PREFIX}-clang'
-    '${MINGW_PACKAGE_PREFIX}-lld'
-    '${MINGW_PACKAGE_PREFIX}-llvm'
-    '${MINGW_PACKAGE_PREFIX}-compiler-rt'
-    '${MINGW_PACKAGE_PREFIX}-libc++'
-    '${MINGW_PACKAGE_PREFIX}-libunwind'
-    '${MINGW_PACKAGE_PREFIX}-gcc'
-    '${MINGW_PACKAGE_PREFIX}-gcc-libs'
-    '${MINGW_PACKAGE_PREFIX}-cc'
-    '${MINGW_PACKAGE_PREFIX}-cc-libs'
-    '${MINGW_PACKAGE_PREFIX}-binutils'
-)
-conflicts=(
-    '${MINGW_PACKAGE_PREFIX}-clang'
-    '${MINGW_PACKAGE_PREFIX}-gcc'
-    '${MINGW_PACKAGE_PREFIX}-gcc-libs'
-)
-
-package() {
-    mkdir -p "\${pkgdir}/usr/bin"
-    # LLVM cross-tools
-    for f in /usr/bin/${TARGET}-*; do
-        [[ -f "\$f" ]] && install -Dm755 "\$f" "\${pkgdir}\$f"
-    done
-    for f in /usr/bin/llvm-* /usr/bin/clang* /usr/bin/lld* /usr/bin/ld.lld*; do
-        [[ -f "\$f" ]] && install -Dm755 "\$f" "\${pkgdir}\$f"
-    done
-
-    # Clang resource dir (compiler-rt builtins)
-    if [[ -d "/usr/lib/clang" ]]; then
-        mkdir -p "\${pkgdir}/usr/lib"
-        cp -a /usr/lib/clang "\${pkgdir}/usr/lib/"
-    fi
-
-    # LLVM runtime libs in sysroot
-    mkdir -p "\${pkgdir}${MINGW_PREFIX}/"{bin,lib}
-    cp -a ${MINGW_PREFIX}/lib/libc++* "\${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
-    cp -a ${MINGW_PREFIX}/lib/libunwind* "\${pkgdir}${MINGW_PREFIX}/lib/" 2>/dev/null || true
-    cp -a ${MINGW_PREFIX}/bin/libc++*.dll "\${pkgdir}${MINGW_PREFIX}/bin/" 2>/dev/null || true
-    cp -a ${MINGW_PREFIX}/bin/libunwind*.dll "\${pkgdir}${MINGW_PREFIX}/bin/" 2>/dev/null || true
-}
-CLANGPKG
-    _run_makepkg "${_clang_dir}"
-fi
 
 rm -rf "${_pkg_tmpdir}"
 

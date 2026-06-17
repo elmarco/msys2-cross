@@ -1,21 +1,20 @@
-pkgname=mingw-w64-ucrt-x86_64-pkgconf
+pkgname=${MINGW_PACKAGE_PREFIX}-pkgconf
 pkgver=1.0
 pkgrel=1
-pkgdesc="pkg-config wrapper for UCRT64 cross-compilation on Linux"
+pkgdesc="pkg-config wrapper for cross-compilation on Linux"
 arch=('any')
 url="https://github.com/pkgconf/pkgconf"
 license=('ISC')
 provides=(
-    'mingw-w64-ucrt-x86_64-pkg-config'
+    "${MINGW_PACKAGE_PREFIX}-pkg-config"
 )
-conflicts=('mingw-w64-ucrt-x86_64-pkg-config')
+conflicts=("${MINGW_PACKAGE_PREFIX}-pkg-config")
 
 package() {
     install -Dm755 /opt/msys2-cross/wrappers/mingw-pkg-config \
         "${pkgdir}/opt/msys2-cross/wrappers/mingw-pkg-config"
 
-    # Also install as the prefixed name that some build systems look for
     mkdir -p "${pkgdir}/usr/bin"
     ln -sf /opt/msys2-cross/wrappers/mingw-pkg-config \
-        "${pkgdir}/usr/bin/x86_64-w64-mingw32-pkg-config"
+        "${pkgdir}/usr/bin/${TARGET}-pkg-config"
 }

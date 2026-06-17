@@ -1,7 +1,7 @@
-pkgname=mingw-w64-ucrt-x86_64-meson
+pkgname=${MINGW_PACKAGE_PREFIX}-meson
 pkgver=1.0
 pkgrel=1
-pkgdesc="Meson wrapper for UCRT64 cross-compilation on Linux"
+pkgdesc="Meson wrapper for cross-compilation on Linux"
 arch=('any')
 url="https://mesonbuild.com/"
 license=('Apache-2.0')

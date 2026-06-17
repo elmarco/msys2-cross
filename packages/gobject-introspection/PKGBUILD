@@ -1,0 +1,31 @@
+pkgname=${MINGW_PACKAGE_PREFIX}-gobject-introspection
+pkgver=1.84.0
+pkgrel=1
+pkgdesc="Dummy gobject-introspection — provides pkg-config for cross-compilation"
+arch=('any')
+license=('MIT')
+
+package() {
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/bin"
+    for tool in g-ir-scanner g-ir-compiler g-ir-generate; do
+        printf '#!/bin/sh\nexit 0\n' > "${pkgdir}${MINGW_PREFIX}/bin/${tool}"
+        chmod +x "${pkgdir}${MINGW_PREFIX}/bin/${tool}"
+    done
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/lib/pkgconfig"
+    cat > "${pkgdir}${MINGW_PREFIX}/lib/pkgconfig/gobject-introspection-1.0.pc" << EOF
+prefix=${MINGW_PREFIX}
+libdir=\${prefix}/lib
+datadir=\${prefix}/share
+g_ir_scanner=\${prefix}/bin/g-ir-scanner
+g_ir_compiler=\${prefix}/bin/g-ir-compiler
+g_ir_generate=\${prefix}/bin/g-ir-generate
+girdir=\${datadir}/gir-1.0
+typelibdir=\${libdir}/girepository-1.0
+Name: gobject-introspection
+Description: dummy for cross-compilation
+Version: ${pkgver}
+Cflags:
+Libs:
+EOF
+}
