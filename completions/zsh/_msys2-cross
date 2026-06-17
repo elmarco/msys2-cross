@@ -27,6 +27,7 @@ _msys2-cross() {
         'reset:Remove working image (reset to bootstrap baseline)'
         'destroy:Remove working image, bootstrap image, and built packages'
         'rebuild:Rebuild the bootstrap image'
+        'upstream:Install or search packages from upstream MSYS2 repos'
         'check-update:Check for version drift against upstream MSYS2'
         'srpm:Generate an SRPM for a MINGW package'
         'mock-build:Build the msys2-cross RPM via mock'
@@ -95,6 +96,30 @@ _msys2-cross() {
                     ;;
                 mock-build)
                     _message 'mock flags'
+                    ;;
+                upstream)
+                    local -a upstream_commands=(
+                        'install:Install pre-built packages from upstream MSYS2 repos'
+                        'search:Search upstream MSYS2 repos for packages'
+                    )
+                    _arguments \
+                        '1:subcommand:->upstream_cmd' \
+                        '*::arg:->upstream_args' && return
+                    case $state in
+                        upstream_cmd)
+                            _describe -t commands 'upstream subcommand' upstream_commands
+                            ;;
+                        upstream_args)
+                            case ${line[1]} in
+                                install)
+                                    _message 'package name (e.g. libpng, zlib)'
+                                    ;;
+                                search)
+                                    _message 'search pattern'
+                                    ;;
+                            esac
+                            ;;
+                    esac
                     ;;
                 link)
                     _arguments '1:directory:_directories'

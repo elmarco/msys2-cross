@@ -1,0 +1,24 @@
+#
+# pacman-mingw-upstream.conf — pacman config with upstream MSYS2 repos.
+# Generated from pacman-mingw-upstream.conf.in by 08-setup-pacman.sh.
+#
+# Local [msys2-cross] repo is listed first so dummy packages and
+# locally-built packages take priority over upstream binaries.
+#
+
+[options]
+RootDir     = /
+DBPath      = /var/lib/pacman/mingw/
+CacheDir    = /var/cache/pacman/mingw/pkg/
+LogFile     = /var/log/pacman-mingw.log
+GPGDir      = /etc/pacman.d/gnupg/
+
+Architecture = @CMAKE_SYSTEM_PROCESSOR@ auto
+
+SigLevel = Never
+
+[msys2-cross]
+Server = file:///opt/msys2-cross/repo
+
+[@MSYSTEM_LOWER@]
+Server = https://repo.msys2.org/mingw/$repo/

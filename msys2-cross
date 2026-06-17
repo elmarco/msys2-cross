@@ -75,6 +75,8 @@ Commands:
   reset                 Remove working image (reset to bootstrap baseline)
   destroy               Remove working image, bootstrap image, and built packages
   rebuild               Rebuild the bootstrap image
+  upstream install <pkg> Install pre-built packages from upstream MSYS2 repos
+  upstream search <pat>  Search upstream MSYS2 repos for packages
   check-update          Check for version drift against upstream MSYS2
   link [dir]            Symlink msys2-cross into dir (default: ~/.local/bin)
   complete zsh          Output shell code to load Zsh completions
@@ -82,6 +84,8 @@ Commands:
 
 Package names can omit the "mingw-w64-" prefix:
   msys2-cross build libpng    →  builds mingw-w64-libpng
+  msys2-cross upstream install libpng
+                              →  installs mingw-w64-ucrt-x86_64-libpng
 EOF
     exit "${1:-0}"
 }
@@ -753,6 +757,114 @@ cmd_describe() {
     fi
 }
 
+UPSTREAM_PACMAN_CONF="/tmp/pacman-mingw-upstream.conf"
+
+_make_upstream_conf() {
+    local conf
+    conf=$(mktemp)
+    cat > "${conf}" <<CONF
+[options]
+RootDir     = /
+DBPath      = /var/lib/pacman/mingw/
+CacheDir    = /var/cache/pacman/mingw/pkg/
+LogFile     = /var/log/pacman-mingw.log
+GPGDir      = /etc/pacman.d/gnupg/
+Architecture = ${CMAKE_SYSTEM_PROCESSOR} auto
+SigLevel = Never
+
+[msys2-cross]
+Server = file:///opt/msys2-cross/repo
+
+[${MSYSTEM_LOWER}]
+Server = https://repo.msys2.org/mingw/\$repo/
+CONF
+    echo "${conf}"
+}
+
+cmd_upstream() {
+    if [[ $# -eq 0 ]]; then
+        err "Usage: msys2-cross upstream <install|search> <pkg|pattern>"
+        exit 1
+    fi
+
+    local subcmd="$1"
+    shift
+
+    ensure_image
+
+    local upstream_conf
+    upstream_conf=$(_make_upstream_conf)
+
+    case "$subcmd" in
+        install)
+            if [[ $# -eq 0 ]]; then
+                rm -f "${upstream_conf}"
+                err "Usage: msys2-cross upstream install <pkg> [...]"
+                exit 1
+            fi
+
+            local -a pkgs=()
+            for raw_pkg in "$@"; do
+                if [[ "$raw_pkg" == ${MINGW_PACKAGE_PREFIX}-* ]]; then
+                    pkgs+=("$raw_pkg")
+                else
+                    pkgs+=("${MINGW_PACKAGE_PREFIX}-${raw_pkg}")
+                fi
+            done
+
+            msg "Installing from upstream MSYS2 [${MSYSTEM}]: ${pkgs[*]}"
+
+            local container="msys2-cross-upstream-$$"
+            local image
+            image="$(current_image)"
+
+            podman run --init \
+                --name "${container}" \
+                --network=pasta \
+                --user root \
+                "${VOLUMES[@]}" \
+                -v "${upstream_conf}:${UPSTREAM_PACMAN_CONF}:ro" \
+                "${image}" bash -c \
+                "pacman --config ${UPSTREAM_PACMAN_CONF} -Sy --noconfirm && \
+                 pacman --config ${UPSTREAM_PACMAN_CONF} -S --noconfirm --needed ${pkgs[*]}" 2>&1
+            local rc=$?
+
+            if [[ $rc -eq 0 ]]; then
+                podman commit -q --change 'USER builduser' "${container}" "${WORK_IMAGE}" >/dev/null
+                msg "Installed and committed to working image"
+            else
+                err "Upstream install failed"
+            fi
+            podman rm -f "${container}" >/dev/null 2>&1
+            rm -f "${upstream_conf}"
+            return $rc
+            ;;
+        search)
+            if [[ $# -eq 0 ]]; then
+                rm -f "${upstream_conf}"
+                err "Usage: msys2-cross upstream search <pattern>"
+                exit 1
+            fi
+
+            podman run --rm --init \
+                --network=pasta \
+                --user root \
+                "${VOLUMES[@]}" \
+                -v "${upstream_conf}:${UPSTREAM_PACMAN_CONF}:ro" \
+                "$(current_image)" bash -c \
+                "pacman --config ${UPSTREAM_PACMAN_CONF} -Sy >/dev/null && \
+                 pacman --config ${UPSTREAM_PACMAN_CONF} -Ss $*"
+            rm -f "${upstream_conf}"
+            ;;
+        *)
+            rm -f "${upstream_conf}"
+            err "Unknown upstream subcommand: ${subcmd}"
+            err "Usage: msys2-cross upstream <install|search> <pkg|pattern>"
+            exit 1
+            ;;
+    esac
+}
+
 cmd_check_update() {
     local github_raw="https://raw.githubusercontent.com/msys2/MINGW-packages/master"
     local rc=0
@@ -862,6 +974,7 @@ case "$1" in
     reset)    shift; cmd_reset "$@" ;;
     destroy)  shift; cmd_destroy "$@" ;;
     rebuild)      shift; cmd_rebuild "$@" ;;
+    upstream)     shift; cmd_upstream "$@" ;;
     check-update) shift; cmd_check_update "$@" ;;
     srpm)       shift; bash "${SCRIPT_DIR}/scripts/make-mingw-srpm.sh" "$@" ;;
     mock-build) shift; cmd_mock_build "$@" ;;

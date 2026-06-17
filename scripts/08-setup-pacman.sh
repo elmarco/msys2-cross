@@ -37,6 +37,7 @@ _generate_config() {
         -e "s|@CMAKE_SYSTEM_PROCESSOR@|${CMAKE_SYSTEM_PROCESSOR}|g" \
         -e "s|@MESON_CPU_FAMILY@|${MESON_CPU_FAMILY}|g" \
         -e "s|@MESON_C_ARGS@|${meson_c_args}|g" \
+        -e "s|@MSYSTEM_LOWER@|${MSYSTEM_LOWER}|g" \
         "$template" > "$output"
 }
 
@@ -46,6 +47,7 @@ TEMPLATE_DIR="${_ROOT}/opt/msys2-cross/config"
 _generate_config "${TEMPLATE_DIR}/cross-file.meson.in" "${GENERATED_DIR}/cross-file.meson"
 _generate_config "${TEMPLATE_DIR}/toolchain.cmake.in" "${GENERATED_DIR}/toolchain.cmake"
 _generate_config "${TEMPLATE_DIR}/cargo-cross.toml.in" "${GENERATED_DIR}/cargo-cross.toml"
+_generate_config "${TEMPLATE_DIR}/pacman-mingw-upstream.conf.in" "${GENERATED_DIR}/pacman-mingw-upstream.conf"
 
 echo "==> Generated config files in ${GENERATED_DIR}/"
 
