@@ -19,6 +19,8 @@ if [[ "${CC_FAMILY}" = "clang" ]]; then
     export AR="${CROSS_AR}"
     export RANLIB="${CROSS_RANLIB}"
     export DLLTOOL="${CROSS_DLLTOOL}"
+    export WINDRES="${CROSS_WINDRES}"
+    export RC="${CROSS_WINDRES}"
 fi
 
 "${SRC_DIR}/mingw-w64/mingw-w64-libraries/winpthreads/configure" \

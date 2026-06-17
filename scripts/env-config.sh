@@ -21,7 +21,7 @@ case "${MSYSTEM}" in
         MINGW_PREFIX=/clang64
         CC_FAMILY=clang
         MINGW_PACKAGE_PREFIX=mingw-w64-clang-x86_64
-        RUST_TARGET=x86_64-pc-windows-gnu
+        RUST_TARGET=x86_64-pc-windows-gnullvm
         CMAKE_SYSTEM_PROCESSOR=x86_64
         MESON_CPU_FAMILY=x86_64
         ;;
@@ -30,7 +30,7 @@ case "${MSYSTEM}" in
         MINGW_PREFIX=/clangarm64
         CC_FAMILY=clang
         MINGW_PACKAGE_PREFIX=mingw-w64-clang-aarch64
-        RUST_TARGET=aarch64-pc-windows-gnu
+        RUST_TARGET=aarch64-pc-windows-gnullvm
         CMAKE_SYSTEM_PROCESSOR=aarch64
         MESON_CPU_FAMILY=aarch64
         ;;

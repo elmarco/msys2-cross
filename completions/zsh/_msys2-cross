@@ -20,8 +20,8 @@ _msys2-cross() {
         'install:Install built packages into the working image'
         'deps:Show missing dependencies for a package'
         'describe:Show package info (version, deps, status)'
-        'shell:Open an interactive shell in the build environment'
-        'run:Run a command in the build environment'
+        'shell:Open an interactive shell in the current directory'
+        'run:Run a command in the current directory'
         'list:List packages in the sysroot'
         'diff:Show files changed in the working image vs bootstrap'
         'reset:Remove working image (reset to bootstrap baseline)'
@@ -30,6 +30,7 @@ _msys2-cross() {
         'check-update:Check for version drift against upstream MSYS2'
         'srpm:Generate an SRPM for a MINGW package'
         'mock-build:Build the msys2-cross RPM via mock'
+        'link:Symlink msys2-cross into PATH (default: ~/.local/bin)'
         'complete:Output shell code to load completions'
         'help:Display usage information'
     )
@@ -94,6 +95,9 @@ _msys2-cross() {
                     ;;
                 mock-build)
                     _message 'mock flags'
+                    ;;
+                link)
+                    _arguments '1:directory:_directories'
                     ;;
             esac
             ;;

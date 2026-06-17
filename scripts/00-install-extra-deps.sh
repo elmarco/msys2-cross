@@ -30,7 +30,7 @@ dnf install -y \
     cargo-c
 
 # Symlink host-agnostic tools into MINGW_PREFIX so PKGBUILDs find them without Wine
-mkdir -p /ucrt64/bin
-ln -sf /usr/bin/gtk-update-icon-cache /ucrt64/bin/gtk-update-icon-cache
+mkdir -p "${MINGW_PREFIX:-/ucrt64}/bin"
+ln -sf /usr/bin/gtk-update-icon-cache "${MINGW_PREFIX:-/ucrt64}/bin/gtk-update-icon-cache"
 
 dnf clean all

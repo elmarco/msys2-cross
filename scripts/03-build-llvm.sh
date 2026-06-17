@@ -48,5 +48,14 @@ for tool in clang clang++; do
 done
 ln -sf ld.lld "${TARGET}-ld"
 
+if [[ -f llvm-rc && ! -f llvm-windres ]]; then
+    ln -sf llvm-rc llvm-windres
+fi
+for tool in windres dlltool; do
+    if [[ -f "llvm-${tool}" && ! -f "${TARGET}-${tool}" ]]; then
+        ln -sf "llvm-${tool}" "${TARGET}-${tool}"
+    fi
+done
+
 echo "==> LLVM/Clang/LLD ${LLVM_VERSION} installed"
 echo "==> Cross-compiler: ${CROSS_CC}"

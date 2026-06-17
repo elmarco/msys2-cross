@@ -17,29 +17,66 @@ ARG MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
 
 # ===========================================================================
 # Stage 1: Build the cross-toolchain from source
+#
+# Each build step is a separate COPY+RUN pair so that modifying a late-stage
+# script (e.g. llvm-runtimes) doesn't invalidate the cache for earlier heavy
+# steps (e.g. the LLVM build). Path-specific steps use `if` guards and are
+# no-ops for the other path.
 # ===========================================================================
 FROM fedora:latest AS toolchain-builder
 ARG MSYSTEM
 ARG CC_FAMILY
 
-COPY scripts/ /opt/msys2-cross/scripts/
+COPY scripts/common.sh scripts/env-config.sh /opt/msys2-cross/scripts/
 COPY sources/ /build/sources/
+
+COPY scripts/00-install-host-deps.sh /opt/msys2-cross/scripts/
 RUN export MSYSTEM=${MSYSTEM} \
-    && bash /opt/msys2-cross/scripts/00-install-host-deps.sh \
-    && if [ "$CC_FAMILY" = "gcc" ]; then \
-           bash /opt/msys2-cross/scripts/01-build-binutils.sh \
-        && bash /opt/msys2-cross/scripts/02-build-headers.sh \
-        && bash /opt/msys2-cross/scripts/03-build-gcc-bootstrap.sh \
-        && bash /opt/msys2-cross/scripts/04-build-crt.sh \
-        && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
+    && bash /opt/msys2-cross/scripts/00-install-host-deps.sh
+
+COPY scripts/01-build-binutils.sh /opt/msys2-cross/scripts/
+RUN if [ "$CC_FAMILY" = "gcc" ]; then \
+        export MSYSTEM=${MSYSTEM} \
+        && bash /opt/msys2-cross/scripts/01-build-binutils.sh; \
+    fi
+
+COPY scripts/03-build-llvm.sh /opt/msys2-cross/scripts/
+RUN if [ "$CC_FAMILY" = "clang" ]; then \
+        export MSYSTEM=${MSYSTEM} \
+        && bash /opt/msys2-cross/scripts/03-build-llvm.sh; \
+    fi
+
+COPY scripts/02-build-headers.sh /opt/msys2-cross/scripts/
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/02-build-headers.sh
+
+COPY scripts/03-build-gcc-bootstrap.sh /opt/msys2-cross/scripts/
+RUN if [ "$CC_FAMILY" = "gcc" ]; then \
+        export MSYSTEM=${MSYSTEM} \
+        && bash /opt/msys2-cross/scripts/03-build-gcc-bootstrap.sh; \
+    fi
+
+COPY scripts/04-build-crt.sh /opt/msys2-cross/scripts/
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/04-build-crt.sh
+
+COPY scripts/05-build-winpthreads.sh /opt/msys2-cross/scripts/
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh
+
+COPY scripts/06-build-gcc-final.sh /opt/msys2-cross/scripts/
+RUN if [ "$CC_FAMILY" = "gcc" ]; then \
+        export MSYSTEM=${MSYSTEM} \
         && bash /opt/msys2-cross/scripts/06-build-gcc-final.sh; \
-       else \
-           bash /opt/msys2-cross/scripts/03-build-llvm.sh \
-        && bash /opt/msys2-cross/scripts/02-build-headers.sh \
-        && bash /opt/msys2-cross/scripts/04-build-crt.sh \
-        && bash /opt/msys2-cross/scripts/05-build-winpthreads.sh \
+    fi
+
+COPY scripts/03-build-llvm-runtimes.sh /opt/msys2-cross/scripts/
+RUN if [ "$CC_FAMILY" = "clang" ]; then \
+        export MSYSTEM=${MSYSTEM} \
         && bash /opt/msys2-cross/scripts/03-build-llvm-runtimes.sh; \
-       fi
+    fi
+
+COPY scripts/07-build-rust-cross.sh /opt/msys2-cross/scripts/
 RUN export MSYSTEM=${MSYSTEM} \
     && bash /opt/msys2-cross/scripts/07-build-rust-cross.sh \
     && rm -rf /build
@@ -79,8 +116,9 @@ RUN --mount=from=toolchain-builder,source=/,target=/builder \
     if [ "${CC_FAMILY}" = "clang" ]; then \
         cp -a /builder/usr/bin/clang* /builder/usr/bin/lld* \
               /builder/usr/bin/llvm-* /builder/usr/bin/ld.lld* \
-              /usr/bin/ 2>/dev/null || true; \
-        cp -a /builder/usr/lib/clang /usr/lib/clang 2>/dev/null || true; \
+              /usr/bin/; \
+        mkdir -p /usr/lib/clang \
+        && cp -a /builder/usr/lib/clang/. /usr/lib/clang/; \
     fi
 
 # Recreate sysroot symlinks and build tool wrappers

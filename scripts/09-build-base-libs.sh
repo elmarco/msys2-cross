@@ -41,6 +41,16 @@ build_base_pkg() {
     pacman --config "${PACMAN_CONF}" -Udd --noconfirm --overwrite='*' "${pkgdir}"/*.pkg.tar.*
 }
 
+# Verify cross-compiler works before starting builds
+echo "==> Testing cross-compiler..."
+echo 'int main() { return 0; }' > /tmp/test_cc.c
+if ! ${CROSS_CC} --sysroot=${MINGW_PREFIX} /tmp/test_cc.c -o /tmp/test_cc.exe 2>&1; then
+    echo "==> FATAL: cross-compiler cannot create executables"
+    ${CROSS_CC} --sysroot=${MINGW_PREFIX} -v /tmp/test_cc.c -o /tmp/test_cc.exe 2>&1 || true
+    exit 1
+fi
+rm -f /tmp/test_cc.c /tmp/test_cc.exe
+
 # Build order matters: libiconv first (gettext depends on it)
 build_base_pkg mingw-w64-libiconv
 build_base_pkg mingw-w64-gettext

@@ -9,6 +9,15 @@ echo "========================================="
 RUST_SRC_DIR="${SRC_DIR}/rustc-${RUST_VERSION}-src"
 RUST_SYSROOT=$(rustc --print sysroot)
 
+# Ensure target-prefixed tool symlinks exist for LLVM tools Rust needs
+if [[ "${CC_FAMILY}" = "clang" ]]; then
+    for tool in dlltool; do
+        if [[ -f "/usr/bin/llvm-${tool}" && ! -f "/usr/bin/${TARGET}-${tool}" ]]; then
+            ln -sf "llvm-${tool}" "/usr/bin/${TARGET}-${tool}"
+        fi
+    done
+fi
+
 echo "==> Bootstrap rustc: $(rustc --version)"
 echo "==> Target: ${TARGET} (${RUST_TARGET})"
 echo "==> Sysroot: ${RUST_SYSROOT}"
