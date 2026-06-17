@@ -960,10 +960,8 @@ case "$1" in
             zsh)
                 cat <<EVAL
 fpath=(${SCRIPT_DIR}/completions/zsh \$fpath)
-unfunction _msys2-cross 2>/dev/null
-autoload -Uz compinit _msys2-cross
-compinit -C
-compdef _msys2-cross msys2-cross
+autoload -Uz _msys2-cross
+(( \$+functions[compdef] )) && compdef _msys2-cross msys2-cross
 EVAL
                 ;;
             *)
