@@ -98,28 +98,9 @@ _msys2-cross() {
                     _message 'mock flags'
                     ;;
                 upstream)
-                    local -a upstream_commands=(
-                        'install:Install pre-built packages from upstream MSYS2 repos'
-                        'search:Search upstream MSYS2 repos for packages'
-                    )
                     _arguments \
-                        '1:subcommand:->upstream_cmd' \
-                        '*::arg:->upstream_args' && return
-                    case $state in
-                        upstream_cmd)
-                            _describe -t commands 'upstream subcommand' upstream_commands
-                            ;;
-                        upstream_args)
-                            case ${line[1]} in
-                                install)
-                                    _message 'package name (e.g. libpng, zlib)'
-                                    ;;
-                                search)
-                                    _message 'search pattern'
-                                    ;;
-                            esac
-                            ;;
-                    esac
+                        '1:subcommand:((install\:"Install from upstream MSYS2 repos" search\:"Search upstream MSYS2 repos"))' \
+                        '*:package:_msys2_cross_packages'
                     ;;
                 link)
                     _arguments '1:directory:_directories'

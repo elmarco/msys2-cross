@@ -225,7 +225,7 @@ install_single() {
     [[ "${2:-}" == "--force" ]] && force=1
 
     local pkgfiles
-    pkgfiles=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "*.pkg.tar.*" 2>/dev/null | head -20)
+    pkgfiles=$(find "${MINGW_PACKAGES_DIR}/${pkg}" -name "${MINGW_PACKAGE_PREFIX}-*.pkg.tar.*" 2>/dev/null | head -20)
 
     if [[ -z "$pkgfiles" ]]; then
         err "No built packages found for ${pkg}"
@@ -420,7 +420,7 @@ cmd_build() {
         msg "Succeeded (${#succeeded[@]}):"
         for p in "${succeeded[@]}"; do
             local pkgs
-            pkgs=$(find "${MINGW_PACKAGES_DIR}/${p}" -name "*.pkg.tar.*" 2>/dev/null)
+            pkgs=$(find "${MINGW_PACKAGES_DIR}/${p}" -name "${MINGW_PACKAGE_PREFIX}-*.pkg.tar.*" 2>/dev/null)
             if [[ -n "$pkgs" ]]; then
                 echo "$pkgs" | while read -r f; do echo -e "  ${GREEN}OK${NC}  ${f##*/}"; done
             else
@@ -757,29 +757,12 @@ cmd_describe() {
     fi
 }
 
+UPSTREAM_CONF_TEMPLATE="/opt/msys2-cross/config/pacman-mingw-upstream.conf.in"
 UPSTREAM_PACMAN_CONF="/tmp/pacman-mingw-upstream.conf"
 
-_make_upstream_conf() {
-    local conf
-    conf=$(mktemp)
-    cat > "${conf}" <<CONF
-[options]
-RootDir     = /
-DBPath      = /var/lib/pacman/mingw/
-CacheDir    = /var/cache/pacman/mingw/pkg/
-LogFile     = /var/log/pacman-mingw.log
-GPGDir      = /etc/pacman.d/gnupg/
-Architecture = ${CMAKE_SYSTEM_PROCESSOR} auto
-SigLevel = Never
-
-[msys2-cross]
-Server = file:///opt/msys2-cross/repo
-
-[${MSYSTEM_LOWER}]
-Server = https://repo.msys2.org/mingw/\$repo/
-CONF
-    echo "${conf}"
-}
+_UPSTREAM_INIT="sed -e 's|@CMAKE_SYSTEM_PROCESSOR@|${CMAKE_SYSTEM_PROCESSOR}|g' \
+    -e 's|@MSYSTEM_LOWER@|${MSYSTEM_LOWER}|g' \
+    ${UPSTREAM_CONF_TEMPLATE} > ${UPSTREAM_PACMAN_CONF}"
 
 cmd_upstream() {
     if [[ $# -eq 0 ]]; then
@@ -792,13 +775,9 @@ cmd_upstream() {
 
     ensure_image
 
-    local upstream_conf
-    upstream_conf=$(_make_upstream_conf)
-
     case "$subcmd" in
         install)
             if [[ $# -eq 0 ]]; then
-                rm -f "${upstream_conf}"
                 err "Usage: msys2-cross upstream install <pkg> [...]"
                 exit 1
             fi
@@ -823,9 +802,9 @@ cmd_upstream() {
                 --network=pasta \
                 --user root \
                 "${VOLUMES[@]}" \
-                -v "${upstream_conf}:${UPSTREAM_PACMAN_CONF}:ro" \
                 "${image}" bash -c \
-                "pacman --config ${UPSTREAM_PACMAN_CONF} -Sy --noconfirm && \
+                "${_UPSTREAM_INIT} && \
+                 pacman --config ${UPSTREAM_PACMAN_CONF} -Sy --noconfirm && \
                  pacman --config ${UPSTREAM_PACMAN_CONF} -S --noconfirm --needed ${pkgs[*]}" 2>&1
             local rc=$?
 
@@ -836,12 +815,10 @@ cmd_upstream() {
                 err "Upstream install failed"
             fi
             podman rm -f "${container}" >/dev/null 2>&1
-            rm -f "${upstream_conf}"
             return $rc
             ;;
         search)
             if [[ $# -eq 0 ]]; then
-                rm -f "${upstream_conf}"
                 err "Usage: msys2-cross upstream search <pattern>"
                 exit 1
             fi
@@ -850,14 +827,12 @@ cmd_upstream() {
                 --network=pasta \
                 --user root \
                 "${VOLUMES[@]}" \
-                -v "${upstream_conf}:${UPSTREAM_PACMAN_CONF}:ro" \
                 "$(current_image)" bash -c \
-                "pacman --config ${UPSTREAM_PACMAN_CONF} -Sy >/dev/null && \
+                "${_UPSTREAM_INIT} && \
+                 pacman --config ${UPSTREAM_PACMAN_CONF} -Sy >/dev/null && \
                  pacman --config ${UPSTREAM_PACMAN_CONF} -Ss $*"
-            rm -f "${upstream_conf}"
             ;;
         *)
-            rm -f "${upstream_conf}"
             err "Unknown upstream subcommand: ${subcmd}"
             err "Usage: msys2-cross upstream <install|search> <pkg|pattern>"
             exit 1
@@ -986,9 +961,9 @@ case "$1" in
                 cat <<EVAL
 fpath=(${SCRIPT_DIR}/completions/zsh \$fpath)
 unfunction _msys2-cross 2>/dev/null
-autoload -Uz _msys2-cross
-compinit
-compdef _msys2-cross './msys2-cross'
+autoload -Uz compinit _msys2-cross
+compinit -C
+compdef _msys2-cross msys2-cross
 EVAL
                 ;;
             *)
