@@ -24,3 +24,8 @@ export host_alias="${MINGW_CHOST}"
 export build_alias="$(gcc -dumpmachine)"
 
 export PATH="/opt/msys2-cross/wrappers:${MINGW_PREFIX}/bin:${PATH}"
+
+# Libtool uses host file-magic to validate target libraries before creating
+# shared libs with -no-undefined.  Cross-compiled PE/COFF archives fail the
+# check → libtool falls back to static-only → breaks packages expecting DLLs.
+export lt_cv_deplibs_check_method=pass_all
