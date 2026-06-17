@@ -70,6 +70,8 @@ eval "$(./msys2-cross complete zsh)"
 | `rebuild` | Rebuild the bootstrap image |
 | `srpm <pkg> [outdir]` | Generate an SRPM for a MINGW package |
 | `mock-build [mock flags]` | Build the msys2-cross RPM via mock |
+| `upstream install <pkg>` | Install pre-built packages from upstream MSYS2 repos (requires network) |
+| `upstream search <pattern>` | Search upstream MSYS2 repos for packages |
 | `check-update` | Check for version drift against upstream MSYS2 |
 | `complete zsh` | Output shell code to load Zsh completions |
 
@@ -109,7 +111,7 @@ podman run --rm -v $PWD/MINGW-packages:/src msys2-cross \
 | Component | Version | Environment | What it does |
 |---|---|---|---|
 | GCC | 16.1.0 | UCRT64 | Cross-compiler (`x86_64-w64-mingw32-gcc`) |
-| LLVM/Clang/LLD | 20.1.5 | CLANG64, CLANGARM64 | Cross-compiler + linker |
+| LLVM/Clang/LLD | 22.1.7 | CLANG64, CLANGARM64 | Cross-compiler + linker |
 | binutils | 2.46.1 | UCRT64 | Cross-linker, assembler, etc. |
 | mingw-w64 | 14.0.0 | all | Windows headers and CRT |
 | Rust | 1.96.0 | all | Cross-compiled `std` for Windows target |
@@ -360,6 +362,7 @@ config/
   makepkg_mingw.conf             makepkg config (cross-strip, compression)
   makepkg-download.conf          makepkg config for host-side source downloads
   pacman-mingw.conf              pacman config (separate DB at /var/lib/pacman/mingw/)
+  pacman-mingw-upstream.conf.in  pacman config template with upstream MSYS2 repos
   dummy-packages.list            Host-provided tools registered as dummy pacman pkgs
   cross-file.meson.in            Meson cross-compilation template
   native-file.meson              Meson native file for build-machine tools
