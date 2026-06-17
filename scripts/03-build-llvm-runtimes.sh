@@ -69,13 +69,6 @@ DESTDIR="${DESTDIR}" ninja install
 
 echo "==> Building libunwind, libc++abi, and libc++..."
 
-# Fix Unwind-seh.cpp: bare int literal 4 where EXCEPTION_DISPOSITION enum is
-# expected (upstream LLVM bug with mingw-w64 headers that define it as a C++ enum).
-sed -i 's/return 4 \/\* ExceptionExecuteHandler in mingw \*\//return (EXCEPTION_DISPOSITION)4/' \
-    "${LLVM_SRC}/libunwind/src/Unwind-seh.cpp"
-sed -i 's/switch (ms_act)/switch ((int)ms_act)/' \
-    "${LLVM_SRC}/libunwind/src/Unwind-seh.cpp"
-
 mkdir -p "${BUILD_DIR}/runtimes"
 cd "${BUILD_DIR}/runtimes"
 
@@ -90,6 +83,7 @@ cmake -G Ninja \
     -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}" \
     -DCMAKE_FIND_ROOT_PATH="${MINGW_PREFIX}" \
     -DCMAKE_SYSROOT="${MINGW_PREFIX}" \
+    -DCMAKE_C_COMPILER_WORKS=TRUE \
     -DCMAKE_CXX_COMPILER_WORKS=TRUE \
     -DLLVM_ENABLE_RUNTIMES="libunwind;libcxxabi;libcxx" \
     -DLIBUNWIND_USE_COMPILER_RT=ON \

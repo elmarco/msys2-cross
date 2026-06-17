@@ -20,6 +20,9 @@ if [[ "${CC_FAMILY}" = "clang" ]]; then
     export AR="${CROSS_AR}"
     export RANLIB="${CROSS_RANLIB}"
     export DLLTOOL="${CROSS_DLLTOOL}"
+    # compiler-rt/libunwind aren't built yet at this bootstrap stage
+    export CFLAGS="-mno-stack-arg-probe"
+    export LDFLAGS="--unwindlib=none"
 fi
 
 _crt_lib_flags=""

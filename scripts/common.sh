@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Version pins — matched to MSYS2 MINGW-packages as of 2026-06-03
+# Version pins — matched to MSYS2 MINGW-packages as of 2026-06-17
 GCC_VERSION=16.1.0
 BINUTILS_VERSION=2.46.1
 MINGW_W64_COMMIT=19f5121a2944
 MINGW_W64_VERSION=14.0.0
-LLVM_VERSION=20.1.5
+LLVM_VERSION=22.1.7
 
 # Build parallelism
 JOBS=$(nproc)

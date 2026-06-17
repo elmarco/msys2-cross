@@ -37,7 +37,9 @@ cmake -G Ninja \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
     -DCLANG_DEFAULT_LINKER=lld \
     -DCLANG_DEFAULT_CXX_STDLIB=libc++ \
-    -DCLANG_DEFAULT_RTLIB=compiler-rt
+    -DCLANG_DEFAULT_RTLIB=compiler-rt \
+    -DCLANG_DEFAULT_UNWINDLIB=libunwind \
+    -DLLD_DEFAULT_LD_LLD_IS_MINGW=ON
 
 ninja -j"${JOBS}"
 DESTDIR="${DESTDIR}" ninja install
@@ -56,6 +58,14 @@ for tool in windres dlltool; do
         ln -sf "llvm-${tool}" "${TARGET}-${tool}"
     fi
 done
+
+# Create stub compiler-rt builtins archive for bootstrap. CRT and winpthreads
+# need to link before the real builtins are built in 03-build-llvm-runtimes.sh.
+LLVM_MAJOR="${LLVM_VERSION%%.*}"
+_rt_triple="${TARGET/mingw32/windows-gnu}"
+_rt_dir="${DESTDIR}/usr/lib/clang/${LLVM_MAJOR}/lib/${_rt_triple}"
+mkdir -p "${_rt_dir}"
+llvm-ar rc "${_rt_dir}/libclang_rt.builtins.a"
 
 echo "==> LLVM/Clang/LLD ${LLVM_VERSION} installed"
 echo "==> Cross-compiler: ${CROSS_CC}"

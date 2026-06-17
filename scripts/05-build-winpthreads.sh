@@ -21,6 +21,9 @@ if [[ "${CC_FAMILY}" = "clang" ]]; then
     export DLLTOOL="${CROSS_DLLTOOL}"
     export WINDRES="${CROSS_WINDRES}"
     export RC="${CROSS_WINDRES}"
+    # compiler-rt/libunwind aren't built yet at this bootstrap stage
+    export CFLAGS="-mno-stack-arg-probe"
+    export LDFLAGS="--unwindlib=none"
 fi
 
 "${SRC_DIR}/mingw-w64/mingw-w64-libraries/winpthreads/configure" \
