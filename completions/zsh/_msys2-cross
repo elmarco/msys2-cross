@@ -23,6 +23,7 @@ _msys2-cross() {
         'shell:Open an interactive shell in the current directory'
         'run:Run a command in the current directory'
         'list:List packages in the sysroot'
+        'du:Show container image sizes across all environments'
         'diff:Show files changed in the working image vs bootstrap'
         'reset:Remove working image (reset to bootstrap baseline)'
         'destroy:Remove working image, bootstrap image, and built packages'

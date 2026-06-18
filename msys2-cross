@@ -71,6 +71,7 @@ Commands:
   list                  List installed packages in the sysroot
   list -u               List built but not installed packages
   list -a               List all packages known to cross-compile
+  du                    Show container image sizes across all environments
   diff                  Show files changed in the working image vs bootstrap
   reset                 Remove working image (reset to bootstrap baseline)
   destroy               Remove working image, bootstrap image, and built packages
@@ -594,6 +595,33 @@ cmd_destroy() {
     msg "Destroyed. Run 'msys2-cross setup' to start fresh."
 }
 
+cmd_du() {
+    local total=0 found=0
+    local envs=(ucrt64 clang64 clangarm64)
+    printf "%-40s %10s\n" "IMAGE" "SIZE"
+    printf "%-40s %10s\n" "-----" "----"
+    for env in "${envs[@]}"; do
+        for suffix in "" "-work"; do
+            local name="msys2-cross-${env}${suffix}"
+            local size
+            size=$(podman image inspect --format '{{.Size}}' "localhost/${name}:latest" 2>/dev/null) || continue
+            found=1
+            total=$((total + size))
+            local human
+            human=$(numfmt --to=iec-i --suffix=B "$size")
+            local label="${env}"
+            [[ -n "$suffix" ]] && label="${env} (working)"
+            printf "%-40s %10s\n" "$label" "$human"
+        done
+    done
+    if [[ "$found" -eq 0 ]]; then
+        msg "No msys2-cross images found"
+        return
+    fi
+    printf "%-40s %10s\n" "-----" "----"
+    printf "%-40s %10s\n" "TOTAL" "$(numfmt --to=iec-i --suffix=B "$total")"
+}
+
 cmd_rebuild() {
     msg "Rebuilding bootstrap image..."
     podman rmi -f "${WORK_IMAGE}" 2>/dev/null || true
@@ -1027,6 +1055,7 @@ case "$1" in
     shell)    shift; cmd_shell "$@" ;;
     run)      shift; cmd_run "$@" ;;
     list)     shift; cmd_list "$@" ;;
+    du)       shift; cmd_du "$@" ;;
     diff)     shift; cmd_diff "$@" ;;
     reset)    shift; cmd_reset "$@" ;;
     destroy)  shift; cmd_destroy "$@" ;;

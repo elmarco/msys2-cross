@@ -64,6 +64,7 @@ eval "$(./msys2-cross complete zsh)"
 | `list` | List installed packages |
 | `list -u` | List built but not installed packages |
 | `list -a` | List all packages known to MINGW-packages (marks patched ones) |
+| `du` | Show container image sizes across all environments |
 | `diff` | Show package changes in working image vs bootstrap |
 | `reset` | Remove working image (reset to bootstrap baseline) |
 | `destroy` | Remove all images and built packages |
