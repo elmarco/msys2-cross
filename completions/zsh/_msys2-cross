@@ -99,7 +99,7 @@ _msys2-cross() {
                     ;;
                 upstream)
                     _arguments \
-                        '1:subcommand:((install\:"Install from upstream MSYS2 repos" search\:"Search upstream MSYS2 repos"))' \
+                        '1:subcommand:((install\:"Install from upstream MSYS2 repos" install-dep\:"Install build deps from upstream" search\:"Search upstream MSYS2 repos"))' \
                         '*:package:_msys2_cross_packages'
                     ;;
                 link)

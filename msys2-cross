@@ -76,6 +76,8 @@ Commands:
   destroy               Remove working image, bootstrap image, and built packages
   rebuild               Rebuild the bootstrap image
   upstream install <pkg> Install pre-built packages from upstream MSYS2 repos
+  upstream install-dep <pkg>
+                        Install all build dependencies for <pkg> from upstream
   upstream search <pat>  Search upstream MSYS2 repos for packages
   check-update          Check for version drift against upstream MSYS2
   link [dir]            Symlink msys2-cross into dir (default: ~/.local/bin)
@@ -496,6 +498,8 @@ cmd_shell() {
     echo "  Workdir:  /work (${PWD})"
     echo "  Compiler: ${CROSS_CC}"
     echo ""
+    echo "  Run: source /opt/msys2-cross/config/mingw-env.sh"
+    echo ""
     prun "${prun_args[@]}" bash
 }
 
@@ -766,7 +770,7 @@ _UPSTREAM_INIT="sed -e 's|@CMAKE_SYSTEM_PROCESSOR@|${CMAKE_SYSTEM_PROCESSOR}|g' 
 
 cmd_upstream() {
     if [[ $# -eq 0 ]]; then
-        err "Usage: msys2-cross upstream <install|search> <pkg|pattern>"
+        err "Usage: msys2-cross upstream <install|install-dep|search> <pkg|pattern>"
         exit 1
     fi
 
@@ -817,6 +821,84 @@ cmd_upstream() {
             podman rm -f "${container}" >/dev/null 2>&1
             return $rc
             ;;
+        install-dep)
+            if [[ $# -eq 0 ]]; then
+                err "Usage: msys2-cross upstream install-dep <pkg> [...]"
+                exit 1
+            fi
+
+            ensure_mingw_packages
+
+            local -A dummies=()
+            load_dummy_packages dummies
+
+            local -a all_deps=()
+            for raw_pkg in "$@"; do
+                local pkg
+                pkg=$(normalize_pkg "$raw_pkg")
+                checkout_pkg "$pkg"
+                local srcdir="${_checkout_actual}"
+                local pkgbuild="${MINGW_PACKAGES_DIR}/${srcdir}/PKGBUILD"
+
+                if [[ ! -f "$pkgbuild" ]]; then
+                    err "PKGBUILD not found for ${pkg}"
+                    exit 1
+                fi
+
+                local parsed
+                parsed=$(parse_pkgbuild "$pkgbuild")
+                eval "$parsed"
+
+                for dep in "${_depends[@]}" "${_makedepends[@]}"; do
+                    [[ -z "$dep" ]] && continue
+                    dep="${dep%%[><=]*}"
+                    [[ "$dep" == ${MINGW_PACKAGE_PREFIX}-* ]] || continue
+                    [[ -n "${dummies[$dep]+x}" ]] && continue
+                    all_deps+=("$dep")
+                done
+            done
+
+            if [[ ${#all_deps[@]} -eq 0 ]]; then
+                msg "No upstream dependencies to install"
+                return 0
+            fi
+
+            local -a unique_deps=()
+            local -A seen=()
+            for dep in "${all_deps[@]}"; do
+                if [[ -z "${seen[$dep]+x}" ]]; then
+                    seen[$dep]=1
+                    unique_deps+=("$dep")
+                fi
+            done
+
+            msg "Installing build deps from upstream MSYS2 [${MSYSTEM}]:"
+            for dep in "${unique_deps[@]}"; do echo "  ${dep}"; done
+
+            local container="msys2-cross-upstream-$$"
+            local image
+            image="$(current_image)"
+
+            podman run --init \
+                --name "${container}" \
+                --network=pasta \
+                --user root \
+                "${VOLUMES[@]}" \
+                "${image}" bash -c \
+                "${_UPSTREAM_INIT} && \
+                 pacman --config ${UPSTREAM_PACMAN_CONF} -Sy --noconfirm && \
+                 pacman --config ${UPSTREAM_PACMAN_CONF} -S --noconfirm --needed ${unique_deps[*]}" 2>&1
+            local rc=$?
+
+            if [[ $rc -eq 0 ]]; then
+                podman commit -q --change 'USER builduser' "${container}" "${WORK_IMAGE}" >/dev/null
+                msg "Installed and committed to working image"
+            else
+                err "Upstream install-dep failed"
+            fi
+            podman rm -f "${container}" >/dev/null 2>&1
+            return $rc
+            ;;
         search)
             if [[ $# -eq 0 ]]; then
                 err "Usage: msys2-cross upstream search <pattern>"
@@ -834,7 +916,7 @@ cmd_upstream() {
             ;;
         *)
             err "Unknown upstream subcommand: ${subcmd}"
-            err "Usage: msys2-cross upstream <install|search> <pkg|pattern>"
+            err "Usage: msys2-cross upstream <install|install-dep|search> <pkg|pattern>"
             exit 1
             ;;
     esac
