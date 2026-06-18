@@ -71,6 +71,7 @@ eval "$(./msys2-cross complete zsh)"
 | `srpm <pkg> [outdir]` | Generate an SRPM for a MINGW package |
 | `mock-build [mock flags]` | Build the msys2-cross RPM via mock |
 | `upstream install <pkg>` | Install pre-built packages from upstream MSYS2 repos (requires network) |
+| `upstream install-dep <pkg>` | Install all build dependencies for a package from upstream MSYS2 repos |
 | `upstream search <pattern>` | Search upstream MSYS2 repos for packages |
 | `check-update` | Check for version drift against upstream MSYS2 |
 | `complete zsh` | Output shell code to load Zsh completions |
@@ -273,6 +274,27 @@ copr-cli build msys2-cross rpmbuild-mingw/mingw-w64-libiconv/*.src.rpm
 ```
 
 See `.copr/Makefile` for automated Copr integration.
+
+## Cross-compiling upstream projects
+
+The sysroot can also be used to cross-compile projects directly (not via MSYS2 PKGBUILDs). Use `upstream install-dep` to pull pre-built build dependencies from MSYS2 repos, then run the project's own build system inside the container.
+
+Example — cross-compiling QEMU for Windows on ARM:
+
+```sh
+# Install QEMU's MINGW build dependencies from upstream MSYS2
+msys2-cross --msystem=CLANGARM64 upstream install-dep qemu
+
+# Enter an interactive shell (with network for git clone, etc.)
+cd /path/to/qemu
+msys2-cross --msystem=CLANGARM64 shell --network
+
+# Inside the container: configure and build
+mkdir build && cd build
+../configure --cross-prefix=aarch64-w64-mingw32- && ninja
+```
+
+This works for any project whose build system supports cross-compilation via a `--cross-prefix`, `--host`, toolchain file, or cross file.
 
 ## Limitations
 
