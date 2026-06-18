@@ -54,7 +54,7 @@ if [[ -f llvm-rc && ! -f llvm-windres ]]; then
     ln -sf llvm-rc llvm-windres
 fi
 for tool in windres dlltool; do
-    if [[ -f "llvm-${tool}" && ! -f "${TARGET}-${tool}" ]]; then
+    if [[ -f "llvm-${tool}" ]]; then
         ln -sf "llvm-${tool}" "${TARGET}-${tool}"
     fi
 done

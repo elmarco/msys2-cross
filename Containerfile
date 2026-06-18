@@ -35,10 +35,8 @@ RUN export MSYSTEM=${MSYSTEM} \
     && bash /opt/msys2-cross/scripts/00-install-host-deps.sh
 
 COPY scripts/01-build-binutils.sh /opt/msys2-cross/scripts/
-RUN if [ "$CC_FAMILY" = "gcc" ]; then \
-        export MSYSTEM=${MSYSTEM} \
-        && bash /opt/msys2-cross/scripts/01-build-binutils.sh; \
-    fi
+RUN export MSYSTEM=${MSYSTEM} \
+    && bash /opt/msys2-cross/scripts/01-build-binutils.sh
 
 COPY scripts/03-build-llvm.sh /opt/msys2-cross/scripts/
 RUN if [ "$CC_FAMILY" = "clang" ]; then \
@@ -157,6 +155,7 @@ ENV MINGW_PREFIX=${MINGW_PREFIX}
 ENV MINGW_CHOST=${TARGET}
 ENV MINGW_PACKAGE_PREFIX=${MINGW_PACKAGE_PREFIX}
 ENV PATH="/opt/msys2-cross/wrappers:/opt/msys2-cross/config:${PATH}"
+ENV USER=builduser
 
 # Configure Cargo for Rust cross-compilation
 RUN mkdir -p /root/.cargo /home/builduser/.cargo \
